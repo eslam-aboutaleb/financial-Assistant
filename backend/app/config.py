@@ -70,10 +70,6 @@ class Settings(BaseSettings):
     )
 
     # Mock Data Store Paths
-    claims_file_path: str = Field(
-        default=str(Path(__file__).parent / "data" / "mock_claims.json"),
-        description="Filesystem path to mock claims JSON datastore",
-    )
     policy_file_path: str = Field(
         default=str(Path(__file__).parent / "data" / "sample_policy.md"),
         description="Filesystem path to master policy markdown document",
@@ -109,7 +105,7 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(
-        default="sqlite+aiosqlite:///app/data/insureassist.db",
+        default="postgresql+asyncpg://insureassist:local_password@db:5432/insureassist",
         description="SQLAlchemy async database URL",
     )
 
@@ -168,7 +164,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore",
+        extra="forbid",  # Reject unknown env vars to catch typos early (e.g. from Docker like PATH, HOSTNAME),
         case_sensitive=False,
     )
 
