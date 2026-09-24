@@ -1,0 +1,151 @@
+# ==============================================================================
+# OmniCare Financial - Git Ignore
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Environment Variables & Secrets
+# ------------------------------------------------------------------------------
+.env
+.env*.local
+.env.development
+.env.test
+.env.production
+*.env
+# Ensure the example configuration is tracked in version control
+!.env.example
+
+# ------------------------------------------------------------------------------
+# Vector Database & Persistent Storage (ChromaDB)
+# ------------------------------------------------------------------------------
+chroma_db/
+**/chroma_db/
+chroma_data/
+**/chroma_data/
+*.chroma
+*.parquet
+*.sqlite3
+
+# ------------------------------------------------------------------------------
+# Python & Bytecode
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+backend/lib/
+backend/lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ------------------------------------------------------------------------------
+# Python Virtual Environments
+# ------------------------------------------------------------------------------
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ------------------------------------------------------------------------------
+# Testing, Coverage & Code Quality
+# ------------------------------------------------------------------------------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+
+# ------------------------------------------------------------------------------
+# Node.js & Frontend Dependencies
+# ------------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/
+
+# ------------------------------------------------------------------------------
+# Next.js Build Output
+# ------------------------------------------------------------------------------
+.next/
+out/
+.turbo/
+
+# ------------------------------------------------------------------------------
+# Docker & Containers
+# ------------------------------------------------------------------------------
+docker-compose.override.yml
+*.docker.log
+
+# ------------------------------------------------------------------------------
+# Operating System & IDE Specific
+# ------------------------------------------------------------------------------
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ------------------------------------------------------------------------------
+# Kilo Tooling (not part of the OmniCare project)
+# ------------------------------------------------------------------------------
+.kilo/
+skills/
+rules/
+
+# ------------------------------------------------------------------------------
+# Test Artifacts & Screenshots
+# ------------------------------------------------------------------------------
+.playwright-mcp/
+.playwright-mcp/*
+!.playwright-mcp/.gitkeep
+
+# ------------------------------------------------------------------------------
+# Log Files
+# ------------------------------------------------------------------------------
+*.log
+logs/
+log/

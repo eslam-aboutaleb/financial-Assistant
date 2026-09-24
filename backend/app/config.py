@@ -1,0 +1,186 @@
+"""
+Application configuration using pydantic-settings (Pydantic v2).
+Loads environment variables from .env file with strict typing and sensible defaults.
+"""
+
+import json
+import os
+from functools import lru_cache
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """
+    Application settings loaded from environment variables and .env file.
+    All properties are type-safe and validated upon initialization.
+    """
+
+    # Application Metadata
+    app_name: str = Field(
+        default="OmniCare Financial API",
+        description="Public API application title",
+    )
+    app_version: str = Field(
+        default="1.0.0",
+        description="Semantic application release version",
+    )
+    environment: Literal["development", "staging", "production", "test"] = Field(
+        default="development",
+        description="Runtime environment tier",
+    )
+
+    # Logging Configuration
+    log_level: str = Field(
+        default="INFO",
+        description="Standard logging verbosity level",
+    )
+
+    # LLM & Agent Configuration
+    openai_api_key: str = Field(
+        default="",
+        description="OpenAI API key used by LiteLLM for LLM inferences",
+    )
+    openai_api_base: str = Field(
+        default="",
+        description="Optional OpenAI API base URL override for LiteLLM routing",
+    )
+    llm_model: str = Field(
+        default="openai/gpt-4o-mini",
+        description="Provider-prefixed model identifier routed via LiteLLM",
+    )
+
+    # Vector Database (ChromaDB) Configuration
+    chroma_db_path: str = Field(
+        default=str(Path(__file__).parent / "data" / "chroma_db"),
+        description="Filesystem directory for persistent Chroma vector database",
+    )
+    chroma_collection_name: str = Field(
+        default="omnicare_policies",
+        description="Chroma vector collection name for insurance policy chunks",
+    )
+
+    # Embedding Model Configuration
+    embedding_model: str = Field(
+        default="text-embedding-3-small",
+        description="OpenAI embedding model name used by ChromaDB OpenAIEmbeddingFunction",
+    )
+
+    # Mock Data Store Paths
+    claims_file_path: str = Field(
+        default=str(Path(__file__).parent / "data" / "mock_claims.json"),
+        description="Filesystem path to mock claims JSON datastore",
+    )
+    policy_file_path: str = Field(
+        default=str(Path(__file__).parent / "data" / "sample_policy.md"),
+        description="Filesystem path to master policy markdown document",
+    )
+
+    # Server Network Binding
+    host: str = Field(
+        default="0.0.0.0",  # noqa: S104 -- intentional; container/service deployments bind all interfaces
+        description="Host interface to bind the Uvicorn server",
+    )
+    port: int = Field(
+        default=8000,
+        ge=1,
+        le=65535,
+        description="Network port to bind the Uvicorn server (1-65535)",
+    )
+
+    # CORS Allowed Origins
+    cors_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:3000",
+            "http://frontend:3000",
+            "http://127.0.0.1:3000",
+        ],
+        description="Allowed CORS origin URLs for browser frontend integration",
+    )
+
+    # Authentication
+    jwt_secret_key: str = Field(
+        default="super-secret-key-for-development-only-change-me",
+        description="Secret key for signing JWT tokens. MUST be overridden in production.",
+    )
+
+    # Database
+    database_url: str = Field(
+        default="sqlite+aiosqlite:///app/data/omnicare.db",
+        description="SQLAlchemy async database URL",
+    )
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, value: Any) -> list[str]:
+        """Supports comma-separated strings, JSON arrays, or existing lists."""
+        if isinstance(value, str):
+            # Check for comma-delimited string
+            value = value.strip()
+            if value.startswith("[") and value.endswith("]"):
+                try:
+                    return json.loads(value)
+                except json.JSONDecodeError:
+                    pass
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, (list, tuple)):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return []
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, value: str) -> str:
+        """Validates that log level is an accepted standard logging level."""
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        upper_val = value.strip().upper()
+        if upper_val not in valid_levels:
+            raise ValueError(
+                f"Invalid log_level '{value}'. Must be one of: {', '.join(sorted(valid_levels))}"
+            )
+        return upper_val
+
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def validate_jwt_secret_key(cls, value: str, info: Any) -> str:
+        """Reject the insecure default JWT secret in production environments."""
+        environment = info.data.get("environment", "development")
+        if environment == "production" and "change-me" in value:
+            raise ValueError(
+                "JWT_SECRET_KEY must be set to a secure random value in production. "
+                "The current value is the insecure development default."
+            )
+        return value
+
+    @field_validator("cors_origins")
+    @classmethod
+    def forbid_wildcard_origin(cls, value: list[str]) -> list[str]:
+        """Reject wildcard CORS origins when credentials are allowed."""
+        if "*" in value:
+            raise ValueError(
+                "Wildcard origin '*' is not allowed when allow_credentials=True. "
+                "Specify explicit origins instead."
+            )
+        return value
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """
+    Returns a cached singleton instance of Settings.
+    Supports dependency injection in FastAPI routers via Depends(get_settings).
+    """
+    return Settings()
+
+
+# Singleton settings instance for backward compatibility with direct imports
+settings = get_settings()
