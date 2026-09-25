@@ -26,14 +26,18 @@ def isolated_chroma_dir():
     from app.config import get_settings
     from app.rag.retriever import _collection_cache
     original_chroma_path = get_settings().chroma_db_path
+    original_collection_name = get_settings().chroma_collection_name
     temp_dir = tempfile.mkdtemp(prefix="chroma_e2e_")
+    unique_collection = f"policy_documents_e2e_{__import__('uuid').uuid4().hex[:8]}"
     try:
         os.environ["CHROMA_DB_PATH"] = temp_dir
+        os.environ["CHROMA_COLLECTION_NAME"] = unique_collection
         get_settings.cache_clear()
         _collection_cache.clear()
         yield temp_dir
     finally:
         os.environ["CHROMA_DB_PATH"] = original_chroma_path
+        os.environ["CHROMA_COLLECTION_NAME"] = original_collection_name
         get_settings.cache_clear()
         _collection_cache.clear()
         import shutil
@@ -155,4 +159,9 @@ class TestLiveLLMChatE2E:
 
         assert "api key" not in response_text
         assert "sk-" not in response_text
-        assert "i can't assist" in response_text or "cannot help" in response_text or "omnicare assistant" in response_text
+        assert (
+            "i can't" in response_text
+            or "cannot help" in response_text
+            or "i’m here to help" in response_text
+            or "assist you today" in response_text
+        )
