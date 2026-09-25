@@ -3,14 +3,14 @@ Health check endpoint.
 GET /api/v1/health - Evaluates and returns service operational status.
 """
 
+import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Response, status
+from sqlalchemy import text
 
 from app.schemas.models import HealthResponse
-from app.database import get_db
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import engine
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,6 @@ router = APIRouter()
 )
 async def health_check(
     response: Response,
-    session: AsyncSession = Depends(get_db),
 ) -> HealthResponse:
     """
     Evaluates backend system health and dependency availability.
@@ -52,7 +51,12 @@ async def health_check(
         HealthResponse indicating 'healthy' (HTTP 200) or 'unhealthy' (HTTP 503).
     """
     try:
-        await session.execute(text("SELECT 1"))
+
+        async def _check_db():
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+
+        await asyncio.wait_for(_check_db(), timeout=1.0)
     except Exception as e:
         logger.error(f"Health check dependency failure (Postgres): {e}")
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE

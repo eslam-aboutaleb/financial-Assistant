@@ -31,7 +31,9 @@ def _in_docker() -> bool:
 
 
 DB_HOST = "db" if _in_docker() else "localhost"
-os.environ["DATABASE_URL"] = f"postgresql+asyncpg://omnicare:omnicare_password@{DB_HOST}:5432/omnicare"
+os.environ["DATABASE_URL"] = (
+    f"postgresql+asyncpg://omnicare:omnicare_password@{DB_HOST}:5432/omnicare"
+)
 
 # Ensure backend root is on sys.path
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -167,6 +169,7 @@ except ImportError:
     sys.modules["chromadb"] = fake_chromadb
     sys.modules["chromadb.utils"] = fake_utils
     sys.modules["chromadb.utils.embedding_functions"] = fake_embed
+
 
 # Patch ingest_policy to avoid network calls during test client startup
 patch("app.main.ingest_policy").start()

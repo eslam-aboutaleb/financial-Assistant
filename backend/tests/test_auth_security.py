@@ -32,7 +32,6 @@ from app.auth import (
 )
 
 
-
 @pytest.fixture
 def mock_current_user():
     """Override get_current_user to return a valid UUID instead of test-user-id."""
@@ -61,7 +60,9 @@ class TestSignup:
         }
         response = test_client.post("/api/v1/auth/signup", json=payload)
 
-        assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
+        assert (
+            response.status_code == 201
+        ), f"Expected 201, got {response.status_code}: {response.text}"
         data = response.json()
         assert "access_token" in data
         assert data["token_type"] == "bearer"
@@ -77,6 +78,53 @@ class TestSignup:
         assert response.status_code == 201
         cookies = test_client.cookies
         assert COOKIE_NAME in cookies
+
+    def test_cookie_secure_enforcement(self, test_client):
+        """Session cookies should set secure=True in production."""
+        from app.auth import set_session_cookie
+        from fastapi import Response
+        from unittest.mock import patch
+
+        # Test development (secure=False)
+        with patch("app.auth.settings.environment", "dev"):
+            res = Response()
+            set_session_cookie(res, "dummy_token")
+            # Note: FastAPI/Starlette Response.set_cookie sets the header directly
+            header = res.headers.get("set-cookie")
+            assert "Secure" not in header
+
+        # Test production (secure=True)
+        with patch("app.auth.settings.environment", "production"):
+            res = Response()
+            set_session_cookie(res, "dummy_token")
+            header = res.headers.get("set-cookie")
+            assert "Secure" in header
+
+    def test_resolve_token_prefers_header(self):
+        """_resolve_token should prefer Authorization header over cookie."""
+        from app.auth import _resolve_token
+        from fastapi import Request
+        from fastapi.security import HTTPAuthorizationCredentials
+        from unittest.mock import MagicMock
+
+        req = MagicMock(spec=Request)
+        req.cookies.get.return_value = "cookie-token"
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="header-token")
+
+        token = _resolve_token(req, creds)
+        assert token == "header-token"
+
+    def test_resolve_token_falls_back_to_cookie(self):
+        """_resolve_token should fallback to cookie if Authorization header is missing."""
+        from app.auth import _resolve_token
+        from fastapi import Request
+        from unittest.mock import MagicMock
+
+        req = MagicMock(spec=Request)
+        req.cookies.get.return_value = "cookie-token"
+
+        token = _resolve_token(req, None)
+        assert token == "cookie-token"
 
     def test_signup_duplicate_username_returns_409(self, test_client):
         """Signing up with an existing username returns 409 Conflict."""
@@ -154,8 +202,12 @@ class TestSignin:
         # Create user first
         test_client.post("/api/v1/auth/signup", json={"username": username, "password": password})
 
-        response = test_client.post("/api/v1/auth/signin", json={"username": username, "password": password})
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        response = test_client.post(
+            "/api/v1/auth/signin", json={"username": username, "password": password}
+        )
+        assert (
+            response.status_code == 200
+        ), f"Expected 200, got {response.status_code}: {response.text}"
         data = response.json()
         assert "access_token" in data
         assert data["token_type"] == "bearer"
@@ -164,24 +216,33 @@ class TestSignin:
     def test_signin_wrong_password_returns_401(self, test_client):
         """Wrong password returns 401 with generic message."""
         username = f"wrongpw_{uuid.uuid4().hex[:8]}"
-        test_client.post("/api/v1/auth/signup", json={"username": username, "password": "CorrectPass123!"})
+        test_client.post(
+            "/api/v1/auth/signup", json={"username": username, "password": "CorrectPass123!"}
+        )
 
-        response = test_client.post("/api/v1/auth/signin", json={"username": username, "password": "WrongPass123!"})
+        response = test_client.post(
+            "/api/v1/auth/signin", json={"username": username, "password": "WrongPass123!"}
+        )
         assert response.status_code == 401
         data = response.json()
         assert "error" in data
 
     def test_signin_nonexistent_user_returns_401(self, test_client):
         """Non-existent user returns 401 (no user enumeration)."""
-        response = test_client.post("/api/v1/auth/signin", json={
-            "username": f"nonexistent_{uuid.uuid4().hex}",
-            "password": "SomePass123!",
-        })
+        response = test_client.post(
+            "/api/v1/auth/signin",
+            json={
+                "username": f"nonexistent_{uuid.uuid4().hex}",
+                "password": "SomePass123!",
+            },
+        )
         assert response.status_code == 401
 
     def test_signin_empty_password_returns_401(self, test_client):
         """Empty password returns 401 (no user found, timing-safe dummy hash)."""
-        response = test_client.post("/api/v1/auth/signin", json={"username": "anyone", "password": ""})
+        response = test_client.post(
+            "/api/v1/auth/signin", json={"username": "anyone", "password": ""}
+        )
         assert response.status_code == 401
 
     def test_signin_missing_fields_returns_422(self, test_client):
@@ -192,8 +253,12 @@ class TestSignin:
     def test_signin_sets_session_cookie(self, test_client):
         """Successful signin sets the session cookie."""
         username = f"cookiecheck_{uuid.uuid4().hex[:8]}"
-        test_client.post("/api/v1/auth/signup", json={"username": username, "password": "TestPass123!"})
-        response = test_client.post("/api/v1/auth/signin", json={"username": username, "password": "TestPass123!"})
+        test_client.post(
+            "/api/v1/auth/signup", json={"username": username, "password": "TestPass123!"}
+        )
+        response = test_client.post(
+            "/api/v1/auth/signin", json={"username": username, "password": "TestPass123!"}
+        )
         assert response.status_code == 200
         assert COOKIE_NAME in test_client.cookies
 
@@ -214,18 +279,28 @@ class TestLogout:
     def test_logout_returns_204(self, test_client):
         """Logout returns 204 No Content."""
         username = f"logoutuser_{uuid.uuid4().hex[:8]}"
-        test_client.post("/api/v1/auth/signup", json={"username": username, "password": "TestPass123!"})
+        test_client.post(
+            "/api/v1/auth/signup", json={"username": username, "password": "TestPass123!"}
+        )
         # Get token
-        token = test_client.post("/api/v1/auth/signin", json={"username": username, "password": "TestPass123!"}).json()["access_token"]
+        token = test_client.post(
+            "/api/v1/auth/signin", json={"username": username, "password": "TestPass123!"}
+        ).json()["access_token"]
 
-        response = test_client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
+        response = test_client.post(
+            "/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"}
+        )
         assert response.status_code == 204
 
     def test_logout_clears_cookie(self, test_client):
         """Logout clears the session cookie."""
         username = f"clearcookie_{uuid.uuid4().hex[:8]}"
-        test_client.post("/api/v1/auth/signup", json={"username": username, "password": "TestPass123!"})
-        token = test_client.post("/api/v1/auth/signin", json={"username": username, "password": "TestPass123!"}).json()["access_token"]
+        test_client.post(
+            "/api/v1/auth/signup", json={"username": username, "password": "TestPass123!"}
+        )
+        token = test_client.post(
+            "/api/v1/auth/signin", json={"username": username, "password": "TestPass123!"}
+        ).json()["access_token"]
 
         test_client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
         cookies = test_client.cookies
@@ -252,7 +327,9 @@ class TestJWT:
         """Tokens expire after ACCESS_TOKEN_EXPIRE_MINUTES."""
         user_id = uuid.uuid4()
         token = create_access_token(user_id)
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
+        payload = jwt.decode(
+            token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False}
+        )
         exp = datetime.fromtimestamp(payload["exp"], tz=UTC)
         now = datetime.now(tz=UTC)
         expected_exp = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -286,7 +363,9 @@ class TestJWT:
         """Tampered tokens (wrong signature) raise _InvalidTokenError."""
         user_id = uuid.uuid4()
         payload = {"sub": str(user_id), "exp": datetime.now(tz=UTC) + timedelta(hours=1)}
-        tampered = jwt.encode(payload, "a-long-enough-dev-secret-key-for-testing-purposes", algorithm=ALGORITHM)
+        tampered = jwt.encode(
+            payload, "a-long-enough-dev-secret-key-for-testing-purposes", algorithm=ALGORITHM
+        )
         with pytest.raises(_InvalidTokenError):
             _decode_token(tampered)
 
@@ -313,17 +392,27 @@ class TestBearerAuth:
         """Chat with valid Bearer token returns 200 (mocked current user)."""
         with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = {"response": "Test", "sources": [], "tool_calls": []}
-            response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers=mock_current_user)
+            response = test_client.post(
+                "/api/v1/chat", json={"message": "Hello"}, headers=mock_current_user
+            )
             assert response.status_code == 200
 
     def test_chat_with_invalid_bearer_token_returns_401(self, test_client):
         """Chat with invalid Bearer token returns 401."""
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={"Authorization": "Bearer invalid-token"})
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": "Bearer invalid-token"},
+        )
         assert response.status_code == 401
 
     def test_chat_with_tampered_bearer_token_returns_401(self, test_client):
         """Chat with tampered Bearer token returns 401."""
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={"Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.tampered.signature"})
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.tampered.signature"},
+        )
         assert response.status_code == 401
 
     def test_chat_with_expired_bearer_token_returns_401(self, test_client):
@@ -331,12 +420,20 @@ class TestBearerAuth:
         user_id = uuid.uuid4()
         expired_payload = {"sub": str(user_id), "exp": datetime.now(tz=UTC) - timedelta(hours=1)}
         expired_token = jwt.encode(expired_payload, SECRET_KEY, algorithm=ALGORITHM)
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={"Authorization": f"Bearer {expired_token}"})
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {expired_token}"},
+        )
         assert response.status_code == 401
 
     def test_chat_with_wrong_scheme_returns_401(self, test_client):
         """Chat with non-Bearer scheme returns 401."""
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={"Authorization": "Basic dXNlcjpwYXNz"})
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": "Basic dXNlcjpwYXNz"},
+        )
         assert response.status_code == 401
 
     def test_reset_chat_without_auth_returns_401(self, test_client):
@@ -405,7 +502,9 @@ class TestChatAuthIsolation:
         with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = {"response": "Test", "sources": [], "tool_calls": []}
             test_client.post("/api/v1/chat", json={"message": "Hello"}, headers=mock_current_user)
-            mock_run.assert_awaited_once_with(user_id="00000000-0000-0000-0000-000000000001", message="Hello")
+            mock_run.assert_awaited_once_with(
+                user_id="00000000-0000-0000-0000-000000000001", message="Hello"
+            )
 
     def test_chat_reset_requires_auth(self, test_client):
         """Chat reset requires authentication."""
@@ -448,12 +547,16 @@ class TestChatAuthIsolation:
             mock_factory.return_value.__aenter__.return_value = mock_session
 
             fake_id = str(uuid.uuid4())
-            response = test_client.get(f"/api/v1/chat/conversations/{fake_id}", headers=mock_current_user)
+            response = test_client.get(
+                f"/api/v1/chat/conversations/{fake_id}", headers=mock_current_user
+            )
             assert response.status_code == 404
 
     def test_invalid_conversation_id_returns_400(self, test_client, mock_current_user):
         """Malformed conversation UUID returns 400."""
-        response = test_client.get("/api/v1/chat/conversations/not-a-uuid", headers=mock_current_user)
+        response = test_client.get(
+            "/api/v1/chat/conversations/not-a-uuid", headers=mock_current_user
+        )
         assert response.status_code == 400
 
 
@@ -534,6 +637,7 @@ class TestClaimIsolation:
         assert "current_user_id" in source, "search_claims should use current_user_id for scoping"
         # Verify the RAG function filters by owner_id
         from app.rag.claims_rag import retrieve_claims_hybrid
+
         rag_source = inspect.getsource(retrieve_claims_hybrid)
         assert "owner_id" in rag_source, "retrieve_claims_hybrid should filter by owner_id"
 
@@ -548,14 +652,18 @@ class TestChatEdgeCases:
         """Empty message string returns 200 (schema allows empty string)."""
         with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = {"response": "Hello!", "sources": [], "tool_calls": []}
-            response = test_client.post("/api/v1/chat", json={"message": ""}, headers=mock_current_user)
+            response = test_client.post(
+                "/api/v1/chat", json={"message": ""}, headers=mock_current_user
+            )
             assert response.status_code == 200
 
     def test_chat_whitespace_only_message(self, test_client, mock_current_user):
         """Whitespace-only message returns 200."""
         with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = {"response": "Hello!", "sources": [], "tool_calls": []}
-            response = test_client.post("/api/v1/chat", json={"message": "   "}, headers=mock_current_user)
+            response = test_client.post(
+                "/api/v1/chat", json={"message": "   "}, headers=mock_current_user
+            )
             assert response.status_code == 200
 
     def test_chat_very_long_message(self, test_client, mock_current_user):
@@ -563,7 +671,9 @@ class TestChatEdgeCases:
         with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = {"response": "OK", "sources": [], "tool_calls": []}
             long_msg = "a" * 10000
-            response = test_client.post("/api/v1/chat", json={"message": long_msg}, headers=mock_current_user)
+            response = test_client.post(
+                "/api/v1/chat", json={"message": long_msg}, headers=mock_current_user
+            )
             assert response.status_code == 200
 
     def test_chat_message_with_special_chars(self, test_client, mock_current_user):
@@ -571,7 +681,9 @@ class TestChatEdgeCases:
         with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = {"response": "OK", "sources": [], "tool_calls": []}
             special_msg = "Hello 世界 🌍 <script>alert('xss')</script>"
-            response = test_client.post("/api/v1/chat", json={"message": special_msg}, headers=mock_current_user)
+            response = test_client.post(
+                "/api/v1/chat", json={"message": special_msg}, headers=mock_current_user
+            )
             assert response.status_code == 200
 
     def test_chat_missing_message_returns_422(self, test_client, mock_current_user):

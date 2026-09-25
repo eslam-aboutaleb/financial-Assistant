@@ -156,12 +156,8 @@ class TestChatIdempotency:
             payload = {"message": "water damage"}
 
             # Two identical requests without Idempotency-Key
-            res1 = test_client.post(
-                "/api/v1/chat", json=payload, headers=mock_current_user
-            )
-            res2 = test_client.post(
-                "/api/v1/chat", json=payload, headers=mock_current_user
-            )
+            res1 = test_client.post("/api/v1/chat", json=payload, headers=mock_current_user)
+            res2 = test_client.post("/api/v1/chat", json=payload, headers=mock_current_user)
 
         assert res1.status_code == 200
         assert res2.status_code == 200
@@ -185,12 +181,8 @@ class TestChatIdempotency:
             }
             payload = {"message": "water damage"}
 
-            res1 = test_client.post(
-                "/api/v1/chat", json=payload, headers=headers
-            )
-            res2 = test_client.post(
-                "/api/v1/chat", json=payload, headers=headers
-            )
+            res1 = test_client.post("/api/v1/chat", json=payload, headers=headers)
+            res2 = test_client.post("/api/v1/chat", json=payload, headers=headers)
 
         assert mock_run.await_count == 1
         assert res2.headers.get("X-Idempotent-Replayed") == "true"
@@ -222,6 +214,7 @@ class TestChatIdempotency:
     def test_errors_are_not_cached(self, test_client, mock_current_user):
         """A 500 response must NOT be cached -- client should retry and get a fresh attempt."""
         from app.main import app
+
         app.state.limiter.enabled = False
         try:
             with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
@@ -254,14 +247,18 @@ class TestChatIdempotency:
     def test_different_users_same_message_not_shared(self, test_client, mock_current_user):
         """Without explicit keys, two users with the same message are processed independently."""
         # Disable rate limiter for this test to avoid 429 blocking the second request
-        from app.main import app; app.state.limiter.enabled = False
+        from app.main import app
+
+        app.state.limiter.enabled = False
         with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = _MOCK_RESPONSE
 
             # First user
             headers1 = mock_current_user
             # Second user with a different user-id
-            headers2 = {"Authorization": "Bearer test-token-for-00000000-0000-0000-0000-000000000002"}
+            headers2 = {
+                "Authorization": "Bearer test-token-for-00000000-0000-0000-0000-000000000002"
+            }
 
             test_client.post(
                 "/api/v1/chat",

@@ -1,13 +1,32 @@
+# ==============================================================================
+# OmniCare Financial Frontend - Docker Ignore
+# ==============================================================================
+# Files and directories excluded from the Docker build context to keep the
+# image small and avoid leaking sensitive information.
+
+# Dependencies (installed during build, not copied)
 node_modules
+
+# Build outputs (generated during the build stage)
 out
 build
 dist
+
+# Git metadata (not needed inside the container)
 .git
 .gitignore
+
+# Environment variables and secrets (never copy .env into the image)
 .env
 .env.*
+
+# Preserve .env.example for documentation purposes
 !.env.example
+
+# Package manager debug logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# macOS system files
 .DS_Store

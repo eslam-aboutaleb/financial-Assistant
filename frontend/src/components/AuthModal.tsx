@@ -17,7 +17,7 @@ import { Eye, EyeOff, Shield } from "lucide-react";
 
 interface AuthModalProps {
   /** Callback invoked with the access token and user ID after successful auth. */
-  onAuthenticated: (token: string, userId: string) => void;
+  onAuthenticated: (userId: string) => void;
 }
 
 export default function AuthModal({ onAuthenticated }: AuthModalProps) {
@@ -93,7 +93,7 @@ export default function AuthModal({ onAuthenticated }: AuthModalProps) {
         ? "Successfully signed in!"
         : "Successfully signed up!";
       toast.success(successMsg, { id: successMsg });
-      onAuthenticated(data.access_token, data.user_id);
+      onAuthenticated(data.user_id);
     } catch (err: any) {
       toast.error(err.message, { id: err.message });
     } finally {

@@ -1,11 +1,22 @@
+# ==============================================================================
+# OmniCare Financial Backend - Docker Ignore
+# ==============================================================================
+# Files and directories excluded from the Docker build context to keep the
+# image small and avoid leaking sensitive information.
+
+# Python bytecode and cache files
 __pycache__
 *.py[cod]
 *$py.class
 *.so
+
+# Virtual environments
 .Python
 env/
 venv/
 .venv/
+
+# Build artifacts
 build/
 develop-eggs/
 dist/
@@ -21,11 +32,19 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Test and coverage artifacts
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Git metadata (not needed inside the container)
 .git
 .gitignore
+
+# Environment variables and secrets (never copy .env into the image)
 .env
 .env.*
+
+# macOS system files
 .DS_Store

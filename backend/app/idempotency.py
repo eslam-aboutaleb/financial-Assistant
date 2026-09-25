@@ -124,11 +124,13 @@ def clear_cache() -> None:
     """
     _cache.clear()
 
+
 from functools import wraps
 from typing import TypeVar
 from collections.abc import Callable
 
-F = TypeVar('F', bound=Callable[..., Any])
+F = TypeVar("F", bound=Callable[..., Any])
+
 
 def idempotent_endpoint() -> Callable[[F], F]:
     """
@@ -136,6 +138,7 @@ def idempotent_endpoint() -> Callable[[F], F]:
     It expects the route handler to have `idempotency_key` (str) and `response` (Response)
     as injected keyword arguments.
     """
+
     def decorator(func: F) -> F:
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -162,5 +165,7 @@ def idempotent_endpoint() -> Callable[[F], F]:
                     store_response(idempotency_key, result)
 
             return result
-        return wrapper # type: ignore
+
+        return wrapper  # type: ignore
+
     return decorator

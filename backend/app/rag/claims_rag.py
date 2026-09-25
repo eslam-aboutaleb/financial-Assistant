@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 _claims_collection_cache: dict[tuple[str, str, str], Any] = {}
 
+
 def get_claims_collection() -> Any:
     chroma_path = settings.chroma_db_path
     collection_name = "omnicare_claims"
@@ -31,6 +32,7 @@ def get_claims_collection() -> Any:
         )
 
     return _claims_collection_cache[cache_key]
+
 
 async def _bm25_claims_fallback(
     query: str,
@@ -53,22 +55,25 @@ async def _bm25_claims_fallback(
 
         retrieved = []
         for row in rows:
-            retrieved.append({
-                "document": f"Claim {row['claim_id']}: {row['claim_type']} - {row['description']}",
-                "metadata": {
-                    "claim_id": row["claim_id"],
-                    "policy_number": row["policy_number"],
-                    "status": row["status"],
-                    "amount": row["amount"],
-                },
-                "distance": 0.0,
-                "_rank": float(row["rank"]),
-                "_source": "bm25",
-            })
+            retrieved.append(
+                {
+                    "document": f"Claim {row['claim_id']}: {row['claim_type']} - {row['description']}",
+                    "metadata": {
+                        "claim_id": row["claim_id"],
+                        "policy_number": row["policy_number"],
+                        "status": row["status"],
+                        "amount": row["amount"],
+                    },
+                    "distance": 0.0,
+                    "_rank": float(row["rank"]),
+                    "_source": "bm25",
+                }
+            )
         return retrieved
     except Exception as exc:
         logger.warning("BM25 fallback search failed for claims: %s", exc)
         return []
+
 
 async def retrieve_claims_hybrid(
     query: str,
@@ -86,9 +91,7 @@ async def retrieve_claims_hybrid(
 
     if available > 0:
         raw = collection.query(
-            query_texts=[query],
-            n_results=min(n_results, available),
-            where=where_clause
+            query_texts=[query], n_results=min(n_results, available), where=where_clause
         )
         documents = raw.get("documents", [[]])[0]
         metadatas = raw.get("metadatas", [[]])[0]
@@ -104,6 +107,7 @@ async def retrieve_claims_hybrid(
     logger.info("Falling back to BM25 keyword search for claims query: %s", query)
     return await _bm25_claims_fallback(query, user_id, n_results=n_results)
 
+
 def ingest_claim_sync(
     claim_id: str,
     owner_id: uuid.UUID,
@@ -118,14 +122,17 @@ def ingest_claim_sync(
     collection.add(
         ids=[claim_id],
         documents=[text_content],
-        metadatas=[{
-            "claim_id": claim_id,
-            "owner_id": str(owner_id),
-            "policy_number": policy_number,
-            "status": status,
-            "amount": amount
-        }]
+        metadatas=[
+            {
+                "claim_id": claim_id,
+                "owner_id": str(owner_id),
+                "policy_number": policy_number,
+                "status": status,
+                "amount": amount,
+            }
+        ],
     )
+
 
 async def ingest_all_claims():
     async with async_session_factory() as session:
@@ -140,5 +147,5 @@ async def ingest_all_claims():
             description=claim.description,
             policy_number=claim.policy_number,
             status=claim.status,
-            amount=claim.amount
+            amount=claim.amount,
         )

@@ -27,9 +27,9 @@ def two_users(test_client):
     def signup_with_retry(username, password, max_retries=3, delay=0.5):
         for attempt in range(max_retries):
             try:
-                return test_client.post("/api/v1/auth/signup", json={
-                    "username": username, "password": password
-                })
+                return test_client.post(
+                    "/api/v1/auth/signup", json={"username": username, "password": password}
+                )
             except Exception as exc:
                 if "another operation is in progress" in str(exc) and attempt < max_retries - 1:
                     time.sleep(delay * (attempt + 1))
@@ -98,8 +98,10 @@ class TestClaimIDOR:
 
         mock_session = AsyncMock()
         mock_session.add = MagicMock()
-        with patch("app.agent.tools.submit_claim.async_session_factory") as mock_factory, \
-             patch("app.rag.claims_rag.ingest_claim_sync"):
+        with (
+            patch("app.agent.tools.submit_claim.async_session_factory") as mock_factory,
+            patch("app.rag.claims_rag.ingest_claim_sync"),
+        ):
             mock_factory.return_value.__aenter__.return_value = mock_session
             result = await submit_claim(
                 policy_number="POL-1092",
@@ -223,9 +225,11 @@ class TestTokenForgery:
     def test_tampered_token_rejected(self, test_client):
         """Chat endpoint rejects tampered JWT tokens."""
         tampered_token = "eyJhbGciOiJIUzI1NiJ9.tampered.payload.signature"
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
-            "Authorization": f"Bearer {tampered_token}"
-        })
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {tampered_token}"},
+        )
         assert response.status_code == 401
 
     def test_expired_token_rejected(self, test_client):
@@ -239,9 +243,11 @@ class TestTokenForgery:
             "exp": datetime.now(tz=UTC) - timedelta(hours=1),
         }
         expired_token = jwt.encode(expired_payload, SECRET_KEY, algorithm=ALGORITHM)
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
-            "Authorization": f"Bearer {expired_token}"
-        })
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {expired_token}"},
+        )
         assert response.status_code == 401
 
     def test_wrong_secret_token_rejected(self, test_client):
@@ -253,10 +259,16 @@ class TestTokenForgery:
             "sub": str(uuid.uuid4()),
             "exp": datetime.now(tz=UTC) + timedelta(hours=1),
         }
-        wrong_token = jwt.encode(wrong_secret_payload, "this-is-a-long-enough-wrong-secret-key-for-testing", algorithm="HS256")
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
-            "Authorization": f"Bearer {wrong_token}"
-        })
+        wrong_token = jwt.encode(
+            wrong_secret_payload,
+            "this-is-a-long-enough-wrong-secret-key-for-testing",
+            algorithm="HS256",
+        )
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {wrong_token}"},
+        )
         assert response.status_code == 401
 
     def test_token_without_sub_rejected(self, test_client):
@@ -269,9 +281,11 @@ class TestTokenForgery:
             "exp": datetime.now(tz=UTC) + timedelta(hours=1),
         }
         no_sub_token = jwt.encode(no_sub_payload, SECRET_KEY, algorithm=ALGORITHM)
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
-            "Authorization": f"Bearer {no_sub_token}"
-        })
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {no_sub_token}"},
+        )
         assert response.status_code == 401
 
     def test_nonexistent_user_token_clears_cookie_and_rejects(self, test_client):
@@ -287,7 +301,7 @@ class TestTokenForgery:
             "exp": datetime.now(tz=UTC) + timedelta(hours=1),
         }
         token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
-            "Authorization": f"Bearer {token}"
-        })
+        response = test_client.post(
+            "/api/v1/chat", json={"message": "Hello"}, headers={"Authorization": f"Bearer {token}"}
+        )
         assert response.status_code == 401

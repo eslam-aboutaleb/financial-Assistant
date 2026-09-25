@@ -70,6 +70,7 @@ async def create_all_tables():
     migrations instead.
     """
     from app.models.base import Base
+
     # Import models to register them with SQLAlchemy's declarative base.
     # These imports have no other side-effects; they are required so that
     # Base.metadata contains all table definitions before create_all runs.
@@ -77,5 +78,6 @@ async def create_all_tables():
     import app.models.claim  # noqa: F401
     import app.models.conversation  # noqa: F401
     import app.models.policy_chunk  # noqa: F401
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

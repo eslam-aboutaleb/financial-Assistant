@@ -59,9 +59,9 @@ def test_chat_valid_request(test_client, mock_current_user):
             headers=mock_current_user,
         )
 
-        assert response.status_code == 200, (
-            f"Expected status code 200, got {response.status_code}. Details: {response.text}"
-        )
+        assert (
+            response.status_code == 200
+        ), f"Expected status code 200, got {response.status_code}. Details: {response.text}"
 
         data = response.json()
 
@@ -100,9 +100,9 @@ def test_chat_missing_message(test_client, mock_current_user):
         headers=mock_current_user,
     )
 
-    assert response.status_code == 422, (
-        f"Expected 422 Unprocessable Entity when message is omitted, got {response.status_code}"
-    )
+    assert (
+        response.status_code == 422
+    ), f"Expected 422 Unprocessable Entity when message is omitted, got {response.status_code}"
     data = response.json()
 
     # Standardized error envelope: {"error": {"code", "message", "details"}}
@@ -140,9 +140,9 @@ def test_chat_empty_message(test_client, mock_current_user):
             headers=mock_current_user,
         )
 
-        assert response.status_code == 200, (
-            f"Expected status code 200 for empty message string, got {response.status_code}"
-        )
+        assert (
+            response.status_code == 200
+        ), f"Expected status code 200 for empty message string, got {response.status_code}"
 
         data = response.json()
         assert "response" in data
@@ -152,7 +152,9 @@ def test_chat_empty_message(test_client, mock_current_user):
         assert data["sources"] == []
         assert data["tool_calls"] == []
 
-        mock_run.assert_awaited_once_with(user_id="00000000-0000-0000-0000-000000000001", message="")
+        mock_run.assert_awaited_once_with(
+            user_id="00000000-0000-0000-0000-000000000001", message=""
+        )
 
 
 def test_chat_internal_error_500(test_client, mock_current_user):

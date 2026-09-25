@@ -42,11 +42,7 @@ router = APIRouter()
 
 
 @router.post("/signup", response_model=Token, status_code=status.HTTP_201_CREATED)
-async def signup(
-    payload: UserSignup,
-    response: Response,
-    session: AsyncSession = Depends(get_db)
-):
+async def signup(payload: UserSignup, response: Response, session: AsyncSession = Depends(get_db)):
     """Register a new OmniCare user account.
 
     Validates that the username is unique, hashes the password with Argon2id,
@@ -95,11 +91,7 @@ async def signup(
 
 
 @router.post("/signin", response_model=Token)
-async def signin(
-    payload: UserSignin,
-    response: Response,
-    session: AsyncSession = Depends(get_db)
-):
+async def signin(payload: UserSignin, response: Response, session: AsyncSession = Depends(get_db)):
     """Authenticate an existing user and issue a JWT session.
 
     Uses a timing-safe password comparison to prevent user enumeration

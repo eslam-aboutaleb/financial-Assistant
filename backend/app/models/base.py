@@ -12,6 +12,7 @@ circular import issues during application startup.
 
 from sqlalchemy.orm import DeclarativeBase
 
+
 # The canonical base class for all OmniCare ORM models. Import this in model
 # modules rather than importing DeclarativeBase directly, so that the project
 # has a single point of control for base class configuration.

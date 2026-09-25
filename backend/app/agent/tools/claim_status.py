@@ -41,10 +41,7 @@ async def get_claim_status(claim_id: str, policy_number: str = "") -> dict[str, 
 
     try:
         async with async_session_factory() as session:
-            stmt = select(Claim).where(
-                Claim.claim_id == normalised_id,
-                Claim.owner_id == user_uuid
-            )
+            stmt = select(Claim).where(Claim.claim_id == normalised_id, Claim.owner_id == user_uuid)
             result = await session.execute(stmt)
             claim = result.scalar_one_or_none()
 

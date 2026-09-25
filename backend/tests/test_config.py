@@ -19,11 +19,28 @@ def test_default_settings():
     """Verify default settings instantiation with standard defaults."""
     cfg = Settings()
     assert cfg.app_name == "OmniCare Financial API"
-    assert cfg.environment in ("development", "staging", "production", "test")
+    assert cfg.environment in ("dev", "development", "staging", "production", "test")
     assert cfg.port == 8000
     assert cfg.log_level == "INFO"
     assert isinstance(cfg.cors_origins, list)
     assert "http://localhost:3000" in cfg.cors_origins
+
+
+def test_jwt_secret_key_validation():
+    """Verify JWT_SECRET_KEY default and validation."""
+    # Default is dev, should allow 'change-me'
+    cfg = Settings(environment="dev")
+    assert "change-me" in cfg.jwt_secret_key
+
+    # In production, 'change-me' should raise ValidationError
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(
+            environment="production",
+            jwt_secret_key="super-secret-key-for-development-only-change-me",
+        )
+    assert "JWT_SECRET_KEY must be set to a secure random value in production" in str(
+        exc_info.value
+    )
 
 
 def test_cors_origins_parsing():

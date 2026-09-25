@@ -38,9 +38,7 @@ async def save_conversation_turn(
         async with async_session_factory() as db_session:
             conv = (
                 await db_session.execute(
-                    select(Conversation).where(
-                        Conversation.session_id == session_id
-                    )
+                    select(Conversation).where(Conversation.session_id == session_id)
                 )
             ).scalar_one_or_none()
 
@@ -76,6 +74,4 @@ async def save_conversation_turn(
 
             await db_session.commit()
     except Exception as exc:  # pragma: no cover - log and continue
-        logger.error(
-            "Failed to save conversation turn: %s", exc, exc_info=True
-        )
+        logger.error("Failed to save conversation turn: %s", exc, exc_info=True)

@@ -20,7 +20,6 @@ Security design decisions:
 
 from __future__ import annotations
 
-import os
 import uuid
 import datetime
 
@@ -38,18 +37,9 @@ from app.agent.context import current_user_id
 
 # JWT configuration. ``JWT_SECRET_KEY`` must be set in production; the
 # fallback value is for local development only.
-_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
-if _SECRET_KEY is None or len(_SECRET_KEY) < 32:
-    _SECRET_KEY = "dev-only-omnicare-financial-secret-key-change-me-in-production"
-    if not os.environ.get("JWT_SECRET_KEY"):
-        import warnings
-        warnings.warn(
-            "JWT_SECRET_KEY is not set or too short. Using an insecure development fallback. "
-            "Set JWT_SECRET_KEY to at least 32 random bytes in production.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-SECRET_KEY = _SECRET_KEY
+from app.config import settings
+
+SECRET_KEY = settings.jwt_secret_key
 ALGORITHM = "HS256"
 # Access tokens are long-lived (1 week) because the session is cookie-based.
 # For higher-security contexts, consider shorter TTLs with refresh tokens.
@@ -114,9 +104,8 @@ def create_access_token(user_id: uuid.UUID) -> str:
     Returns:
         str: A signed JWT string suitable for setting as an HTTP-only cookie.
     """
-    expire = (
-        datetime.datetime.now(datetime.UTC)
-        + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.datetime.now(datetime.UTC) + datetime.timedelta(
+        minutes=ACCESS_TOKEN_EXPIRE_MINUTES
     )
     to_encode = {"sub": str(user_id), "exp": expire}
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -197,13 +186,14 @@ def set_session_cookie(response: Response, token: str) -> None:
         response: The FastAPI response object to modify.
         token: The signed JWT to store in the cookie.
     """
+    is_secure = settings.environment not in ("dev", "development")
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         httponly=True,
         samesite="lax",
-        secure=False,  # Set True in production
+        secure=is_secure,
         path="/",
     )
 
@@ -214,12 +204,13 @@ def clear_session_cookie(response: Response) -> None:
     Args:
         response: The FastAPI response object to modify.
     """
+    is_secure = settings.environment not in ("dev", "development")
     response.delete_cookie(
         key=COOKIE_NAME,
         path="/",
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=is_secure,
     )
 
 

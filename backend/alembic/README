@@ -1,0 +1,55 @@
+# OmniCare Financial - Alembic Migrations
+
+This directory contains the Alembic migration setup for the OmniCare Financial backend.
+
+## Configuration
+
+- `alembic.ini` - Alembic configuration file
+- `env.py` - Migration environment configuration (async-aware, uses app settings)
+- `versions/` - Migration scripts
+
+## Usage
+
+### Running Migrations
+
+The application automatically runs migrations on startup via `_run_alembic_migrations()` in `app/main.py`. 
+
+For manual migration management:
+
+```bash
+# From the backend/ directory
+export DATABASE_URL="postgresql+asyncpg://omnicare:omnicare_password@localhost:5432/omnicare"
+
+# Apply all pending migrations
+python -m alembic upgrade head
+
+# Create a new migration after model changes
+python -m alembic revision --autogenerate -m "description of change"
+
+# Roll back one migration
+python -m alembic downgrade -1
+
+# Show current migration version
+python -m alembic current
+```
+
+### Creating Migrations
+
+1. Modify the SQLAlchemy models in `app/models/`
+2. Generate a migration:
+   ```bash
+   python -m alembic revision --autogenerate -m "add column to claims"
+   ```
+3. Review the generated migration in `alembic/versions/`
+4. Apply it:
+   ```bash
+   python -m alembic upgrade head
+   ```
+
+### Important Notes
+
+- The initial migration (`6f253a5df2e9_initial_schema.py`) creates the base schema.
+- The database is automatically stamped with the current migration on first run.
+- Migrations are applied automatically in all environments (development, staging, production).
+- Do NOT use `create_all_tables()` in production - use Alembic migrations exclusively.
+- The `DATABASE_URL` is resolved from the same Pydantic settings as the application.
