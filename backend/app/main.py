@@ -155,7 +155,7 @@ async def http_exception_handler(
 ) -> JSONResponse:
     """
     Convert all HTTPExceptions into a standardized ErrorResponse envelope.
-    
+
     This ensures 401, 403, 404, 422, 500, etc. all return the same
     {"error": {"code": "...", "message": "...", "details": ...}} shape.
     """

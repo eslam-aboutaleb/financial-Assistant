@@ -103,7 +103,10 @@ def create_access_token(user_id: uuid.UUID) -> str:
     Returns:
         str: A signed JWT string suitable for setting as an HTTP-only cookie.
     """
-    expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = (
+        datetime.datetime.now(datetime.UTC)
+        + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     to_encode = {"sub": str(user_id), "exp": expire}
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -247,7 +250,10 @@ async def get_current_user(
         user_uuid = _decode_token(token)
     except _InvalidTokenError:
         clear_session_cookie(response)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token") from None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        ) from None
 
     user = (await session.execute(select(User).where(User.id == user_uuid))).scalar_one_or_none()
     if user is None:

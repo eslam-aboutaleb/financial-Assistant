@@ -13,7 +13,6 @@ from __future__ import annotations
 import uuid
 from sqlalchemy import Column, String, Integer, Text, Index
 from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
-from sqlalchemy.sql import func
 
 from app.models.base import Base
 

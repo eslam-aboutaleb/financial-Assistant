@@ -8,7 +8,7 @@ import logging
 from fastapi import APIRouter, Depends, Response, status
 
 from app.schemas.models import HealthResponse
-from app.database import async_session_factory, get_db
+from app.database import get_db
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +37,10 @@ router = APIRouter()
         },
     },
 )
-async def health_check(response: Response, session: AsyncSession = Depends(get_db)) -> HealthResponse:
+async def health_check(
+    response: Response,
+    session: AsyncSession = Depends(get_db),
+) -> HealthResponse:
     """
     Evaluates backend system health and dependency availability.
 

@@ -15,7 +15,7 @@
 
 import { useState } from "react";
 import { Message } from "@/types/chat";
-import { Bot, User, AlertCircle, Copy, Check, RefreshCw } from "lucide-react";
+import { Bot, User, AlertCircle, Copy, Check, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -45,6 +45,7 @@ export default function MessageBubble({
   const isUser = message.role === "user";
   const isError = message.role === "error";
   const [copied, setCopied] = useState(false);
+  const [showToolDetails, setShowToolDetails] = useState(false);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(message.content);
@@ -55,14 +56,14 @@ export default function MessageBubble({
   return (
     <div
       id={`message-${message.id}`}
-      className={`flex w-full gap-3 ${isUser ? "justify-end" : "justify-start"} message-enter`}
+      className={`flex w-full gap-3 ${isUser ? "justify-end" : "justify-start"} items-start message-enter`}
       data-testid={`message-${message.id}`}
       data-message-role={message.role}
     >
       {!isUser && (
         <div
           id={`avatar-${message.id}`}
-          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${isError ? "bg-insurance-error/10" : "bg-insurance-info/10"}`}
+          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${isError ? "mt-3 bg-insurance-error/10" : "mt-3.5 bg-insurance-info/10"}`}
           data-testid={`avatar-${message.id}`}
         >
           {isError ? (
@@ -192,12 +193,30 @@ export default function MessageBubble({
         )}
 
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
-          <div
-            id={`tool-calls-container-${message.id}`}
-            className="mt-2 w-full flex flex-col gap-2"
-            data-testid={`tool-calls-container-${message.id}`}
-          >
-            <ToolCallBadge toolCalls={message.toolCalls} />
+          <div className="mt-2 w-full">
+            <button
+              type="button"
+              onClick={() => setShowToolDetails((prev) => !prev)}
+              className="flex items-center gap-1 text-xs text-insurance-ink-secondary hover:text-insurance-ink transition-colors"
+              aria-expanded={showToolDetails}
+              data-testid={`tool-details-toggle-${message.id}`}
+            >
+              {showToolDetails ? (
+                <ChevronDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5" />
+              )}
+              <span>Tool details</span>
+            </button>
+            {showToolDetails && (
+              <div
+                id={`tool-calls-container-${message.id}`}
+                className="mt-2 w-full flex flex-col gap-2"
+                data-testid={`tool-calls-container-${message.id}`}
+              >
+                <ToolCallBadge toolCalls={message.toolCalls} />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -205,7 +224,7 @@ export default function MessageBubble({
       {isUser && (
         <div
           id={`user-avatar-${message.id}`}
-          className="w-8 h-8 rounded-full bg-insurance-info text-white flex items-center justify-center flex-shrink-0 mt-0.5 shadow-subtle"
+          className="w-8 h-8 rounded-full bg-insurance-info text-white flex items-center justify-center flex-shrink-0 mt-3 shadow-subtle"
           data-testid={`user-avatar-${message.id}`}
         >
           <User className="w-4 h-4" data-testid="user-icon" />

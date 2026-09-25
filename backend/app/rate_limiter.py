@@ -33,7 +33,7 @@ def _user_or_ip_key_func(request):
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
-    
+
     # Check cookie fallback
     if not token:
         token = request.cookies.get("omnicare_access_token")

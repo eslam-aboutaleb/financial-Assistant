@@ -125,8 +125,8 @@ def clear_cache() -> None:
     _cache.clear()
 
 from functools import wraps
-from typing import Callable, TypeVar, Any
-from fastapi import Response
+from typing import TypeVar
+from collections.abc import Callable
 
 F = TypeVar('F', bound=Callable[..., Any])
 
@@ -141,18 +141,18 @@ def idempotent_endpoint() -> Callable[[F], F]:
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             idempotency_key = kwargs.get("idempotency_key")
             response = kwargs.get("response")
-            
+
             if idempotency_key and response:
                 cached = get_cached_response(idempotency_key)
                 if cached is not None:
                     response.headers["X-Idempotent-Replayed"] = "true"
                     response.headers["X-Idempotency-Key"] = idempotency_key
-                    # The route expects a Pydantic model response, so we just return the dict 
+                    # The route expects a Pydantic model response, so we just return the dict
                     # (FastAPI will cast it automatically to the response_model)
                     return cached
-                    
+
             result = await func(*args, **kwargs)
-            
+
             if idempotency_key and response:
                 response.headers["X-Idempotency-Key"] = idempotency_key
                 # Store the Pydantic dump or dict
@@ -160,7 +160,7 @@ def idempotent_endpoint() -> Callable[[F], F]:
                     store_response(idempotency_key, result.model_dump())
                 else:
                     store_response(idempotency_key, result)
-                    
+
             return result
         return wrapper # type: ignore
     return decorator

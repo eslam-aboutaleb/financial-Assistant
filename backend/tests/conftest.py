@@ -9,12 +9,22 @@ Provides fixtures for:
 """
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
 
-import os
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://omnicare:omnicare_password@localhost:5432/omnicare"
+def _in_docker() -> bool:
+    try:
+        return Path("/.dockerenv").exists() or (
+            Path("/proc/self/cgroup").exists()
+            and "docker" in Path("/proc/self/cgroup").read_text(errors="ignore")
+        )
+    except Exception:
+        return False
+
+DB_HOST = "db" if _in_docker() else "localhost"
+os.environ["DATABASE_URL"] = f"postgresql+asyncpg://omnicare:omnicare_password@{DB_HOST}:5432/omnicare"
 import pytest
 from unittest.mock import patch
 patch("app.main.ingest_policy").start()
@@ -144,7 +154,6 @@ except ImportError:
     sys.modules["chromadb.utils"] = fake_utils
     sys.modules["chromadb.utils.embedding_functions"] = fake_embed
 
-import pytest
 
 
 
@@ -198,11 +207,27 @@ def test_client(sample_claims_path):
     """
     from fastapi.testclient import TestClient  # noqa: PLC0415
     from app.main import app  # noqa: PLC0415
-    from app.database import engine
+    from app.database import engine  # noqa: PLC0415
 
     with TestClient(app) as client:
         yield client
-        
+
+    try:
+        import asyncio
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(engine.dispose())
+            else:
+                loop.run_until_complete(engine.dispose())
+    except Exception as exc:  # pragma: no cover - surfaced in test output
+        print(f"[test_client] engine dispose failed: {exc!r}")
+        raise
+
 
 
 @pytest.fixture(scope="function")
@@ -253,7 +278,7 @@ def mock_chroma_collection(tmp_path):
     return collection
 
 
-_TEST_USER_ID = "test-user-id"
+_TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
 @pytest.fixture(autouse=False)

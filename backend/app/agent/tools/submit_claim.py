@@ -19,11 +19,9 @@ from app.schemas.models import ClaimSubmission
 logger = logging.getLogger(__name__)
 
 
-from typing import Literal
-
 async def submit_claim(
     policy_number: str,
-    claim_type: Literal["Water Damage", "Personal Property"],
+    claim_type: str,
     amount: float,
     description: str,
 ) -> dict[str, Any]:
@@ -56,7 +54,10 @@ async def submit_claim(
             description=description,
         )
     except ValidationError as exc:
-        errors = [f"{err['loc'][-1] if err['loc'] else 'field'}: {err['msg']}" for err in exc.errors()]
+        errors = [
+            f"{err['loc'][-1] if err['loc'] else 'field'}: {err['msg']}"
+            for err in exc.errors()
+        ]
         logger.warning("Claim submission validation failed: %s", errors)
         return {"success": False, "validation_errors": errors}
 
@@ -92,6 +93,10 @@ async def submit_claim(
         "claim_type": validated.claim_type,
         "amount": validated.amount,
         "description": validated.description,
+        "citation": (
+            f"Claim {confirmation_id} recorded in the OmniCare claims system "
+            f"under policy {validated.policy_number}."
+        ),
         "message": (
             f"Your claim {confirmation_id} has been successfully submitted "
             "and is now being processed. Keep this ID for your records."

@@ -13,14 +13,11 @@ Covers:
 - Error sanitization: no sensitive leaks in 401/422/500
 """
 
-import time
 import uuid
 import pytest
 import jwt
-from datetime import datetime, timezone, timedelta
-from fastapi.testclient import TestClient
+from datetime import datetime, timedelta, UTC
 from unittest.mock import patch, AsyncMock, MagicMock
-from app.models.user import User
 from app.auth import (
     DUMMY_PASSWORD_HASH,
     hash_password,
@@ -41,7 +38,6 @@ def mock_current_user():
     """Override get_current_user to return a valid UUID instead of test-user-id."""
     from app.auth import get_current_user
     from app.main import app
-    from app.database import get_db
 
     async def _override_get_current_user():
         return "00000000-0000-0000-0000-000000000001"
@@ -257,8 +253,8 @@ class TestJWT:
         user_id = uuid.uuid4()
         token = create_access_token(user_id)
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
-        exp = datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
-        now = datetime.now(tz=timezone.utc)
+        exp = datetime.fromtimestamp(payload["exp"], tz=UTC)
+        now = datetime.now(tz=UTC)
         expected_exp = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         diff = abs((exp - expected_exp).total_seconds())
         assert diff < 60  # within 60 seconds
@@ -280,7 +276,7 @@ class TestJWT:
         user_id = uuid.uuid4()
         expired_payload = {
             "sub": str(user_id),
-            "exp": datetime.now(tz=timezone.utc) - timedelta(hours=1),
+            "exp": datetime.now(tz=UTC) - timedelta(hours=1),
         }
         expired_token = jwt.encode(expired_payload, SECRET_KEY, algorithm=ALGORITHM)
         with pytest.raises(_InvalidTokenError):
@@ -289,14 +285,14 @@ class TestJWT:
     def test_decode_tampered_token_raises_invalid_token(self):
         """Tampered tokens (wrong signature) raise _InvalidTokenError."""
         user_id = uuid.uuid4()
-        payload = {"sub": str(user_id), "exp": datetime.now(tz=timezone.utc) + timedelta(hours=1)}
+        payload = {"sub": str(user_id), "exp": datetime.now(tz=UTC) + timedelta(hours=1)}
         tampered = jwt.encode(payload, "wrong-secret-key", algorithm=ALGORITHM)
         with pytest.raises(_InvalidTokenError):
             _decode_token(tampered)
 
     def test_decode_missing_sub_raises_invalid_token(self):
         """Tokens without 'sub' claim raise _InvalidTokenError."""
-        payload = {"exp": datetime.now(tz=timezone.utc) + timedelta(hours=1)}
+        payload = {"exp": datetime.now(tz=UTC) + timedelta(hours=1)}
         token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
         with pytest.raises(_InvalidTokenError):
             _decode_token(token)
@@ -333,7 +329,7 @@ class TestBearerAuth:
     def test_chat_with_expired_bearer_token_returns_401(self, test_client):
         """Chat with expired Bearer token returns 401."""
         user_id = uuid.uuid4()
-        expired_payload = {"sub": str(user_id), "exp": datetime.now(tz=timezone.utc) - timedelta(hours=1)}
+        expired_payload = {"sub": str(user_id), "exp": datetime.now(tz=UTC) - timedelta(hours=1)}
         expired_token = jwt.encode(expired_payload, SECRET_KEY, algorithm=ALGORITHM)
         response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={"Authorization": f"Bearer {expired_token}"})
         assert response.status_code == 401
@@ -424,8 +420,8 @@ class TestChatAuthIsolation:
         mock_conv.id = uuid.uuid4()
         mock_conv.title = "Test Chat"
         mock_conv.user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
-        mock_conv.created_at = datetime.now(tz=timezone.utc)
-        mock_conv.updated_at = datetime.now(tz=timezone.utc)
+        mock_conv.created_at = datetime.now(tz=UTC)
+        mock_conv.updated_at = datetime.now(tz=UTC)
 
         with patch("app.database.async_session_factory") as mock_factory:
             mock_session = AsyncMock()

@@ -24,7 +24,7 @@ Powered by **Google Agent Development Kit (ADK)** and **LiteLLM**, the assistant
 |                                  DOCKER COMPOSE MESH                                    |
 |                                                                                         |
 |  +-------------------------------------+     +---------------------------------------+  |
-|  |           Next.js Frontend          |     |            FastAPI Backend            |  |
+|  |           React Frontend          |     |            FastAPI Backend            |  |
 |  |             (Port 3000)             |     |              (Port 8000)              |  |
 |  |  * Modern Chat Interface            |     |  * REST Endpoints (/health, /chat)    |  |
 |  |  * Source Citation Cards            |     |  * Pydantic Request/Response Schema   |  |
@@ -58,16 +58,16 @@ Powered by **Google Agent Development Kit (ADK)** and **LiteLLM**, the assistant
 |                |                            |                           |               |
 |                v                            v                           v               |
 |  +---------------------------+  +------------------------+  +------------------------+  |
-|  |    ChromaDB Vector Store  |  |    mock_claims.json    |  |    mock_claims.json    |  |
-|  | (OpenAI Embedding API    |  |  (Read existing claim  |  |  (Validate Pydantic &  |  |
-|  |  (text-embedding-3-small) |  |   record by CLM-ID)    |  |   append new record)   |  |
+|  |    ChromaDB Vector Store  |  |    Postgres Database   |  |    Postgres Database   |  |
+|  | (OpenAI Embedding API    |  |  (Claims table with    |  |  (Validated Pydantic   |  |
+|  |  (text-embedding-3-small) |  |   owner-scoped lookup) |  |   & persisted claims)  |  |
 |  +---------------------------+  +------------------------+  +------------------------+  |
 +-----------------------------------------------------------------------------------------+
 +-------------------------------------------------------------------------+
 |                          Docker Compose                                |
 |                                                                        |
 |  +--------------------+          +----------------------------------+  |
-|  |  Next.js Frontend  |  HTTP    |       FastAPI Backend            |  |
+|  |  React Frontend  |  HTTP    |       FastAPI Backend            |  |
 |  |    (port 3000)     |--------->|        (port 8000)               |  |
 |  |                    |          |                                  |  |
 |  |  * ChatGPT-style   |          |  POST /api/v1/chat              |  |
@@ -82,10 +82,10 @@ Powered by **Google Agent Development Kit (ADK)** and **LiteLLM**, the assistant
 |                                  |  |  |  -> sample_policy.md   |   |  |
 |                                  |  |  |                       |   |  |
 |                                  |  |  +- get_claim_status     |   |  |
-|                                  |  |  |  -> mock_claims.json   |   |  |
+|                                  |  |  |  -> Postgres (Claims) |   |  |
 |                                  |  |  |                       |   |  |
 |                                  |  |  +- submit_claim         |   |  |
-|                                  |  |     -> mock_claims.json   |   |  |
+|                                  |  |     -> Postgres (Claims) |   |  |
 |                                  |  +--------------------------+   |  |
 |                                  +----------------------------------+  |
 +-------------------------------------------------------------------------+
@@ -93,20 +93,20 @@ Powered by **Google Agent Development Kit (ADK)** and **LiteLLM**, the assistant
 
 ### Core Architecture Flow
 **Data Flow:**
-1. User types a message in the Next.js chat UI
-2. Frontend sends `POST /api/v1/chat` with `{user_id, message}`
+1. User types a message in the React chat UI
+2. Frontend sends `POST /api/v1/chat` with `{message}`. `user_id` is optional in the body; if omitted, the authenticated user from the bearer token is used.
 3. FastAPI wraps the message and calls `runner.run_async()` on the ADK Agent
 4. The Agent (via LiteLLM -> OpenAI) decides which tool(s) to invoke
-5. Tools execute: RAG query to Chroma, claim lookup in JSON, or claim submission
+5. Tools execute: RAG query to Chroma, claim lookup in Postgres, or claim submission in Postgres
 6. Agent produces final response with citations and tool results
 7. Backend returns `{response, sources, tool_calls}` to the frontend
 8. Frontend renders Markdown response + citation badges + tool call indicators
 
 ```
-[User Browser] -> [Next.js :3000] -> [FastAPI :8000] -> [ADK Agent + LiteLLM]
-                                                       +-> [Chroma VectorDB] (RAG)
-                                                       +-> [mock_claims.json] (lookup)
-                                                       +-> [mock_claims.json] (submit)
+[User Browser] -> [React/Vite :3000] -> [FastAPI :8000] -> [ADK Agent + LiteLLM]
+                                                        +-> [Chroma VectorDB] (RAG)
+                                                        +-> [Postgres] (claim lookup)
+                                                        +-> [Postgres] (claim submit)
 ```
 
 ---
@@ -135,9 +135,9 @@ Powered by **Google Agent Development Kit (ADK)** and **LiteLLM**, the assistant
 
 3. **Build & Launch Containers**
    ```bash
-   docker-compose up --build
+   docker compose up --build
    ```
-   Docker Compose builds the backend (pre-indexing policy embeddings during build) and the standalone Next.js frontend. The frontend waits for the backend health check (`/api/v1/health`) to report `healthy` before accepting traffic.
+   Docker Compose builds the backend and the React/Vite frontend. The frontend waits for the backend health check (`/api/v1/health`) to report `healthy` before accepting traffic.
 
 4. **Open the Application**
    Navigate to [http://localhost:3000](http://localhost:3000) in your browser. The backend will automatically ingest the policy document into Chroma on startup.
@@ -211,7 +211,7 @@ Configure these settings in `.env` (or pass via container environment):
 | `POLICY_FILE_PATH` | `./app/data/sample_policy.md` | No | Path to the markdown insurance policy document for RAG ingestion. |
 | `HOST` | `0.0.0.0` | No | IP address interface binding for FastAPI Uvicorn server. |
 | `PORT` | `8000` | No | HTTP port for the FastAPI backend server. |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:3000` | No | Backend base URL accessed by the Next.js client browser interface. |
+| `VITE_API_URL` | `http://localhost:8000` | No | Backend base URL accessed by the React client browser interface. |
 
 ---
 
@@ -268,9 +268,9 @@ omnicare-financial/
 |       |   +-- prompts.py          # System instructions & security injection defenses
 |       |   +-- tools/              # Agent tools
 |       |       +-- __init__.py     # Tools package init
-|       |       +-- claim_status.py # get_claim_status tool (reads mock_claims.json)
+|       |       +-- claim_status.py # get_claim_status tool (owner-scoped Postgres lookup)
 |       |       +-- policy_rag.py   # query_policy tool (queries ChromaDB)
-|       |       +-- submit_claim.py # submit_claim tool (validates & writes claims)
+|       |       +-- submit_claim.py # submit_claim tool (validates & persists claims)
 |       +-- api/                    # REST API endpoints
 |       |   +-- __init__.py         # API package init
 |       |   +-- v1/
@@ -279,7 +279,6 @@ omnicare-financial/
 |       |       +-- health.py       # GET /api/v1/health check endpoint
 |       |       +-- router.py       # API v1 route aggregator
 |       +-- data/                   # Persistent data & documents
-|       |   +-- mock_claims.json    # Seed claims database
 |       |   +-- sample_policy.md    # Source policy document for RAG
 |       |   +-- chroma_db/          # Persistent ChromaDB vector index
 |       +-- rag/                    # Retrieval-Augmented Generation subsystem
@@ -297,19 +296,18 @@ omnicare-financial/
 |       +-- test_claim_status.py # Claim lookup tests
 |       +-- test_submit_claim.py # Claim submission tests
 |
-+-- frontend/                       # Next.js 14 Web Application
-    +-- Dockerfile                  # Multi-stage Node 20-alpine standalone build
++-- frontend/                       # React + Vite Web Application
+    +-- Dockerfile                  # Multi-stage Node 20-alpine build
     +-- .dockerignore               # Frontend build context filter
     +-- package.json                # NPM packages & scripts
     +-- tsconfig.json               # TypeScript configuration
-    +-- next.config.js              # Standalone output configuration
+    +-- vite.config.ts              # Vite build configuration
     +-- tailwind.config.js          # Tailwind CSS styling setup
     +-- postcss.config.js           # PostCSS configuration
     +-- src/
         +-- app/
         |   +-- globals.css         # Global styling & scrollbars
-        |   +-- layout.tsx          # Root HTML layout & fonts
-        |   +-- page.tsx            # Main single-page chat view
+        |   +-- providers.tsx       # React providers wrapper
         +-- components/
         |   +-- ChatInput.tsx       # Message input box with keyboard shortcuts
         |   +-- ChatWindow.tsx      # Main conversation window with autoscroll
@@ -337,8 +335,8 @@ omnicare-financial/
 | **Backend Framework** | `fastapi` | `0.115.6` | Asynchronous high-performance REST API |
 | **ASGI Server** | `uvicorn` | `0.34.0` | Production ASGI web server |
 | **Validation** | `pydantic` / `pydantic-settings` | `2.7.1` | Robust runtime typing and environment validation |
-| **Frontend Framework** | `Next.js` | `14.0.0` | React server/client framework with Standalone Docker build |
-| **UI Library** | `React` | `18.2.0` | Component-based interactive UI |
+| **Frontend Framework** | `React` | `18.2.0` | Component-based interactive UI |
+| **Build Tool** | `Vite` | `^8.3.1` | Frontend build tooling and dev server |
 | **Styling** | `Tailwind CSS` | `3.3.0` | Clean enterprise dark-mode design system |
 | **Icons** | `lucide-react` | `^0.300.0` | Modern SVG iconography |
 | **Markdown** | `react-markdown` | `^9.0.0` | Rich text rendering with code syntax highlighting |
@@ -356,7 +354,7 @@ The OmniCare Assistant adheres to strict enterprise safety controls:
 4. **Least-Privilege Containers**: Frontend production image runs under a dedicated, unprivileged `nextjs` user.
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
-| **Frontend** | Next.js 14, React 18, Tailwind CSS | ChatGPT-style chat UI |
+| **Frontend** | React 18, Vite, Tailwind CSS | ChatGPT-style chat UI |
 | **Backend** | FastAPI, Uvicorn | REST API server |
 | **AI Agent** | Google ADK | Agent orchestration & tool management |
 | **LLM Routing** | LiteLLM | Model-agnostic LLM provider |
@@ -406,23 +404,44 @@ A tool call badge displays the `get_claim_status` invocation transparently.
 
 #### 3. New Claim Submission
 
-The agent validates inputs with Pydantic and persists new claims to the JSON datastore.
+The agent validates inputs with Pydantic and persists new claims to the Postgres database.
 
 **Example interaction:**
 
 > **User:** "I want to submit a water damage claim for policy POL-1092. Amount is $5000. A pipe burst in my kitchen yesterday causing flooding."
 
 > **Assistant:** "Your claim has been successfully submitted! **Confirmation ID:** CLM-XXXX. Our claims adjusters will review your claim and reach out within 1-2 business days."
-
 #### Safety Guardrails
 
 The system prompt includes prompt-injection defenses. Attempts to override instructions, role-play as an administrator, or extract system instructions are explicitly detected and rejected with a domain-boundary response.
 
+## How the Agent Works
+
+The OmniCare assistant is powered by **Google ADK** (`LlmAgent`) and routed through **LiteLLM** to an OpenAI-compatible model. When a user sends a message, the backend does not hard-code tool selection. Instead, it performs one inference step: the LLM decides which tools, if any, are needed to answer the question.
+
+**Flow:**
+1. User sends a message to `POST /api/v1/chat`.
+2. FastAPI validates the request and delegates to `run_agent(user_id, message)`.
+3. ADK starts an async event loop with `runner.run_async()`.
+4. LiteLLM forwards the conversation to OpenAI (`gpt-4o-mini` by default).
+5. The model can return a plain text answer, or emit `function_calls` for:
+   - `query_policy` → RAG search over ChromaDB policy chunks
+   - `get_claim_status` → owner-scoped Postgres claim lookup
+   - `submit_claim` → Pydantic-validated claim insertion into Postgres
+6. The backend executes the requested tools, feeds results back to the model, and continues the loop until a final text response is produced.
+7. The final response, together with `sources` and `tool_calls`, is returned to the frontend.
+
+**Security notes:**
+- Every tool uses `current_user_id` from the async context, never from user input, to prevent IDOR.
+- The system prompt explicitly rejects prompt injection, persona hijacking, and out-of-scope requests.
+- Claim submissions are validated with Pydantic before any database write.
+
 ---
+
 
 ### UI Screens
 
-The Next.js frontend provides:
+The React frontend provides:
 - **ChatGPT-style dark theme** chat window with auto-scroll
 - **Markdown-rendered** assistant responses with syntax highlighting
 - **Expandable source citation badges** showing policy section and document

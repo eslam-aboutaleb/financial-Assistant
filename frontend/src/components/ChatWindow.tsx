@@ -45,6 +45,7 @@ export default function ChatWindow({
 }: ChatWindowProps) {
   const { token } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -68,6 +69,8 @@ export default function ChatWindow({
           role: m.role,
           content: m.content,
           timestamp: new Date(m.timestamp),
+          sources: m.sources,
+          toolCalls: m.tool_calls,
         })),
       );
     }
@@ -82,6 +85,8 @@ export default function ChatWindow({
         role: "assistant",
         content: data.response,
         timestamp: new Date(),
+        sources: data.sources,
+        toolCalls: data.tool_calls,
       };
       setMessages((prev) => [...prev, assistantMessage]);
       setHasError(false);
@@ -103,18 +108,12 @@ export default function ChatWindow({
   const isLoading = chatMutation.isPending || isLoadingHistory;
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior,
-      });
-    }
+    messagesEndRef.current?.scrollIntoView({ behavior });
   }, []);
 
-  // Auto-scroll to the bottom when messages change or loading state updates.
   useEffect(() => {
     scrollToBottom("smooth");
-  }, [messages, isLoading, scrollToBottom]);
+  }, [messages, scrollToBottom]);
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
@@ -197,7 +196,7 @@ export default function ChatWindow({
         id="messages-container"
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 md:px-6 pt-6"
+        className="flex-1 overflow-y-auto min-h-0 px-4 md:px-6 pt-6"
         data-testid="messages-container"
         aria-live="polite"
       >
@@ -217,14 +216,13 @@ export default function ChatWindow({
                 Welcome to OmniCare
               </h2>
               <p className="text-insurance-ink-secondary max-w-sm leading-relaxed">
-                Ask about your coverage, claims, policy details, or start a new
-                claim.
+                Ask about coverage, claims, or start a new claim.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 justify-center max-w-3xl">
               {[
                 "Check my recent claims",
-                "What does my policy cover?",
+                "What is covered under water damage?",
                 "File a new claim",
               ].map((suggestion) => (
                 <button
@@ -240,7 +238,7 @@ export default function ChatWindow({
         ) : (
           <div
             id="message-list"
-            className="max-w-3xl mx-auto space-y-6"
+            className="max-w-3xl mx-auto space-y-6 pb-24"
             data-testid="message-list"
           >
             {messages.map((message) => (
@@ -272,6 +270,7 @@ export default function ChatWindow({
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
         )}
       </div>
