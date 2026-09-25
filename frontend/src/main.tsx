@@ -6,7 +6,7 @@ import App from './App';
 import './globals.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+  
     <Providers>
       <App />
       <Toaster
@@ -22,5 +22,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         }}
       />
     </Providers>
-  </React.StrictMode>
+  
 );
