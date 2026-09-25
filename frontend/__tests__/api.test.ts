@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { sendMessage, resetChat, getConversations, getConversationHistory } from '../src/lib/api';
 
-// Set NEXT_PUBLIC_API_URL for tests
-process.env.NEXT_PUBLIC_API_URL = 'http://localhost:8000';
+// Set VITE_API_URL for tests
+process.env.VITE_API_URL = 'http://localhost:8000';
 
 const mockFetch = vi.fn();
 
@@ -39,9 +39,9 @@ describe('sendMessage', () => {
     expect(result.response).toBe('Water damage is covered.');
   });
 
-  it('uses NEXT_PUBLIC_API_URL when set', async () => {
-    const original = process.env.NEXT_PUBLIC_API_URL;
-    process.env.NEXT_PUBLIC_API_URL = 'https://api.example.com';
+  it('uses VITE_API_URL when set', async () => {
+    const original = process.env.VITE_API_URL;
+    process.env.VITE_API_URL = 'https://api.example.com';
 
     mockFetch.mockResolvedValue({
       ok: true,
@@ -55,12 +55,12 @@ describe('sendMessage', () => {
       expect.any(Object)
     );
 
-    process.env.NEXT_PUBLIC_API_URL = original;
+    process.env.VITE_API_URL = original;
   });
 
-  it('falls back to localhost when NEXT_PUBLIC_API_URL is not set', async () => {
-    const original = process.env.NEXT_PUBLIC_API_URL;
-    delete process.env.NEXT_PUBLIC_API_URL;
+  it('falls back to localhost when VITE_API_URL is not set', async () => {
+    const original = process.env.VITE_API_URL;
+    delete process.env.VITE_API_URL;
 
     mockFetch.mockResolvedValue({
       ok: true,
@@ -74,7 +74,7 @@ describe('sendMessage', () => {
       expect.any(Object)
     );
 
-    process.env.NEXT_PUBLIC_API_URL = original;
+    process.env.VITE_API_URL = original;
   });
 
   it('throws with parsed error message on 400', async () => {

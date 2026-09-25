@@ -26,10 +26,11 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response, status
+import litellm
 
 from app.agent.agent import run_agent, reset_user_session
 from app.config import Settings, get_settings
-from app.idempotency import get_cached_response, store_response, idempotent_endpoint
+from app.idempotency import store_response, idempotent_endpoint
 from app.auth import get_current_user
 from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +38,13 @@ from sqlalchemy import select, desc
 from app.models.conversation import Conversation
 import uuid
 
-from app.schemas.models import ChatRequest, ChatResponse, ErrorResponse, ConversationListResponse, ConversationDetailResponse
+from app.schemas.models import (
+    ChatRequest,
+    ChatResponse,
+    ErrorResponse,
+    ConversationListResponse,
+    ConversationDetailResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,29 +121,38 @@ async def chat(
         and tool call traces. Replayed (cached) responses are indicated by
         the ``X-Idempotent-Replayed: true`` header.
     """
+    if payload.user_id and payload.user_id != current_user_id:
+        logger.warning(
+            "Request body user_id '%s' differs from authenticated user '%s'; using authenticated user.",
+            payload.user_id,
+            current_user_id,
+        )
+        effective_user_id = current_user_id
+    else:
+        effective_user_id = payload.user_id or current_user_id
+
     try:
         result: dict[str, Any] = await run_agent(
-            user_id=current_user_id,
+            user_id=effective_user_id,
             message=payload.message,
         )
-
-        chat_response = ChatResponse(
-            response=result["response"],
-            sources=result.get("sources", []),
-            tool_calls=result.get("tool_calls", []),
-        )
-
-        # Cache the successful response for idempotent retries (only if key supplied)
-        if idempotency_key:
-            store_response(idempotency_key, chat_response.model_dump())
-            response.headers["X-Idempotency-Key"] = idempotency_key
-
-        return chat_response
-
+    except litellm.BadRequestError as exc:
+        message_text = str(exc)
+        if "tool_call_id" in message_text or "tool_calls" in message_text:
+            logger.warning(
+                "Detected bad tool-call history for user '%s'; resetting session and retrying once.",
+                effective_user_id,
+            )
+            reset_user_session(effective_user_id)
+            result = await run_agent(
+                user_id=effective_user_id,
+                message=payload.message,
+            )
+        else:
+            raise
     except HTTPException:
         # Re-raise explicit HTTP exceptions without double-wrapping
         raise
-
     except Exception as e:
         logger.exception(
             "Unhandled error during chat processing for user '%s': %s",
@@ -155,12 +171,28 @@ async def chat(
             detail=error_detail,
         ) from e
 
+    chat_response = ChatResponse(
+        response=result["response"],
+        sources=result.get("sources", []),
+        tool_calls=result.get("tool_calls", []),
+    )
+
+    # Cache the successful response for idempotent retries (only if key supplied)
+    if idempotency_key:
+        store_response(idempotency_key, chat_response.model_dump())
+        response.headers["X-Idempotency-Key"] = idempotency_key
+
+    return chat_response
+
 
 @router.post(
     "/chat/reset",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Reset Chat Session",
-    description="Clears the authenticated user's conversation session so the next message starts a fresh context.",
+    description=(
+        "Clears the authenticated user's conversation session "
+        "so the next message starts a fresh context."
+    ),
 )
 @limiter.limit("10/minute")
 async def reset_chat(
@@ -183,7 +215,9 @@ async def reset_chat(
     "/chat/conversations",
     response_model=ConversationListResponse,
     summary="List Conversations",
-    description="Returns metadata for all conversations belonging to the authenticated user.",
+    description=(
+        "Returns metadata for all conversations belonging to the authenticated user."
+    ),
 )
 async def list_conversations(
     current_user_id: str = Depends(get_current_user),
@@ -195,7 +229,11 @@ async def list_conversations(
         ConversationListResponse: A list of conversation metadata objects
         including id, title, and timestamps, ordered by most recently updated.
     """
-    stmt = select(Conversation).where(Conversation.user_id == uuid.UUID(current_user_id)).order_by(desc(Conversation.updated_at))
+    stmt = (
+        select(Conversation)
+        .where(Conversation.user_id == uuid.UUID(current_user_id))
+        .order_by(desc(Conversation.updated_at))
+    )
     result = await session.execute(stmt)
     conversations = result.scalars().all()
 
@@ -216,7 +254,10 @@ async def list_conversations(
     "/chat/conversations/{conversation_id}",
     response_model=ConversationDetailResponse,
     summary="Get Conversation History",
-    description="Returns the full message history for a specific conversation, ensuring the user owns it.",
+    description=(
+        "Returns the full message history for a specific conversation, "
+        "ensuring the user owns it."
+    ),
 )
 async def get_conversation(
     conversation_id: str,

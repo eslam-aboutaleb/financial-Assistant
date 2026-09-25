@@ -6,19 +6,37 @@ from datetime import datetime
 """
 Pydantic models for API request/response schemas, error envelopes, and data validation.
 """
+from typing import Any
 
-from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ChatRequest(BaseModel):
     """Request schema for the /api/v1/chat endpoint."""
 
+    user_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional user identifier. "
+            "If omitted, the authenticated user from the bearer token is used."
+        ),
+        examples=["usr_123"],
+    )
     message: str = Field(
         ...,
         description="User's incoming chat message or insurance inquiry",
         examples=["What is covered under water damage?"],
     )
+
+    @field_validator("user_id")
+    @classmethod
+    def validate_user_id_format(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        return value
 
     model_config = ConfigDict(
         str_strip_whitespace=False,
@@ -104,9 +122,10 @@ class ClaimSubmission(BaseModel):
         description="Policy number associated with the policyholder (e.g., POL-1092)",
         min_length=1,
     )
-    claim_type: Literal["Water Damage", "Personal Property"] = Field(
+    claim_type: str = Field(
         ...,
-        description="Category/type of insurance claim. Must be exactly 'Water Damage' or 'Personal Property'.",
+        description="Category/type of insurance claim (e.g., Water Damage, Personal Property)",
+        min_length=1,
     )
     amount: float = Field(
         ...,

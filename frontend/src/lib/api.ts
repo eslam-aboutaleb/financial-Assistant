@@ -7,7 +7,7 @@
  * ``fetch`` directly to ensure consistent request handling.
  *
  * Environment:
- *   The backend URL is read from ``NEXT_PUBLIC_API_URL``. In development,
+ *   The backend URL is read from ``VITE_API_URL``. In development,
  *   this defaults to ``http://localhost:8000``. In production, set this to
  *   the deployed backend origin.
  */

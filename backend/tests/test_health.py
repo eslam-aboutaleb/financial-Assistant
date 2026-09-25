@@ -7,8 +7,6 @@ Tests:
 - test_health_method_post_not_allowed: Verifies POST method is rejected with HTTP 405 Method Not Allowed
 """
 
-from pathlib import Path
-from unittest.mock import patch
 
 from app.schemas.models import HealthResponse
 
@@ -72,10 +70,13 @@ def test_health_unhealthy_returns_503(test_client, monkeypatch):
     Test that GET /api/v1/health returns HTTP 503 Service Unavailable
     when the underlying datastore is inaccessible.
     """
-    # Override get_db dependency to raise an Exception
+    from unittest.mock import AsyncMock
+
+    fake_session = AsyncMock()
+    fake_session.execute.side_effect = Exception("DB Down")
+
     async def override_get_db():
-        raise Exception("DB Down")
-        yield
+        yield fake_session
 
     from app.main import app
     from app.database import get_db

@@ -2,9 +2,9 @@ import logging
 from typing import Any
 import uuid
 
-from sqlalchemy import select, text
 import chromadb
-from app.rag.embedding import EmbeddingFactory
+from chromadb.utils import embedding_functions
+from sqlalchemy import select, text
 
 from app.config import settings
 from app.database import async_session_factory
@@ -32,7 +32,11 @@ def get_claims_collection() -> Any:
 
     return _claims_collection_cache[cache_key]
 
-async def _bm25_claims_fallback(query: str, user_id: uuid.UUID, n_results: int = 5) -> list[dict[str, Any]]:
+async def _bm25_claims_fallback(
+    query: str,
+    user_id: uuid.UUID,
+    n_results: int = 5,
+) -> list[dict[str, Any]]:
     try:
         async with async_session_factory() as session:
             stmt = text("""
@@ -43,7 +47,8 @@ async def _bm25_claims_fallback(query: str, user_id: uuid.UUID, n_results: int =
                 ORDER BY rank DESC
                 LIMIT :limit
             """)
-            result = await session.execute(stmt, {"query": query, "owner_id": user_id, "limit": n_results})
+            params = {"query": query, "owner_id": user_id, "limit": n_results}
+            result = await session.execute(stmt, params)
             rows = result.mappings().all()
 
         retrieved = []
@@ -65,15 +70,20 @@ async def _bm25_claims_fallback(query: str, user_id: uuid.UUID, n_results: int =
         logger.warning("BM25 fallback search failed for claims: %s", exc)
         return []
 
-async def retrieve_claims_hybrid(query: str, user_id: uuid.UUID, n_results: int = 5, distance_threshold: float = 1.3) -> list[dict[str, Any]]:
+async def retrieve_claims_hybrid(
+    query: str,
+    user_id: uuid.UUID,
+    n_results: int = 5,
+    distance_threshold: float = 1.3,
+) -> list[dict[str, Any]]:
     collection = get_claims_collection()
-    
+
     # We use a where clause to filter by owner_id to secure the lookup!
     where_clause = {"owner_id": str(user_id)}
-    
+
     available = collection.count()
     results = []
-    
+
     if available > 0:
         raw = collection.query(
             query_texts=[query],
@@ -84,17 +94,25 @@ async def retrieve_claims_hybrid(query: str, user_id: uuid.UUID, n_results: int 
         metadatas = raw.get("metadatas", [[]])[0]
         distances = raw.get("distances", [[]])[0]
 
-        for doc, meta, dist in zip(documents, metadatas, distances):
+        for doc, meta, dist in zip(documents, metadatas, distances, strict=False):
             if dist <= distance_threshold:
                 results.append({"document": doc, "metadata": meta, "distance": dist})
-    
+
     if results:
         return results
 
     logger.info("Falling back to BM25 keyword search for claims query: %s", query)
     return await _bm25_claims_fallback(query, user_id, n_results=n_results)
 
-def ingest_claim_sync(claim_id: str, owner_id: uuid.UUID, claim_type: str, description: str, policy_number: str, status: str, amount: float):
+def ingest_claim_sync(
+    claim_id: str,
+    owner_id: uuid.UUID,
+    claim_type: str,
+    description: str,
+    policy_number: str,
+    status: str,
+    amount: float,
+):
     collection = get_claims_collection()
     text_content = f"Claim {claim_id}: {claim_type} - {description}"
     collection.add(
@@ -113,7 +131,7 @@ async def ingest_all_claims():
     async with async_session_factory() as session:
         result = await session.execute(select(Claim))
         claims = result.scalars().all()
-        
+
     for claim in claims:
         ingest_claim_sync(
             claim_id=claim.claim_id,

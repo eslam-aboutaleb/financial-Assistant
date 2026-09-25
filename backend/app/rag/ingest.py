@@ -26,13 +26,10 @@ from typing import Any
 
 import chromadb
 from app.rag.embedding import EmbeddingFactory
-from chromadb.utils import embedding_functions
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session_factory
-from app.models.policy_chunk import PolicyChunk
 
 logger = logging.getLogger(__name__)
 
@@ -164,9 +161,11 @@ async def _write_chunks_to_postgres(chunks: list[dict[str, Any]]) -> None:
             for chunk in chunks:
                 stmt = text("""
                     INSERT INTO policy_chunks
-                        (id, chunk_id, text, section, source, chunk_index, sub_chunk_index, tsvector)
+                        (id, chunk_id, text, section, source,
+                         chunk_index, sub_chunk_index, tsvector)
                     VALUES
-                        (:id, :chunk_id, :text, :section, :source, :chunk_index, :sub_chunk_index,
+                        (:id, :chunk_id, :text, :section, :source,
+                         :chunk_index, :sub_chunk_index,
                          to_tsvector('english', :text))
                     ON CONFLICT (chunk_id) DO NOTHING
                 """)
@@ -185,7 +184,11 @@ async def _write_chunks_to_postgres(chunks: list[dict[str, Any]]) -> None:
             await session.commit()
         logger.info("Wrote %d policy chunks to Postgres for BM25 fallback.", len(chunks))
     except Exception as exc:
-        logger.warning("Could not write policy chunks to Postgres (BM25 fallback unavailable): %s", exc)
+        logger.warning(
+            "Could not write policy chunks to Postgres "
+            "(BM25 fallback unavailable): %s",
+            exc,
+        )
 
 
 def ingest_policy(

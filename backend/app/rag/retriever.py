@@ -16,13 +16,10 @@ import logging
 from typing import Any
 
 import chromadb
-from app.rag.embedding import EmbeddingFactory
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session_factory
-from app.models.policy_chunk import PolicyChunk
 
 logger = logging.getLogger(__name__)
 
