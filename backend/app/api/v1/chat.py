@@ -22,6 +22,7 @@ Idempotency:
   Cached responses are indicated by the ``X-Idempotent-Replayed: true`` header.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -29,6 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response
 import litellm
 
 from app.agent.agent import run_agent, reset_user_session
+from app.agent.conversation_store import save_conversation_turn
 from app.config import Settings, get_settings
 from app.idempotency import store_response, idempotent_endpoint
 from app.auth import get_current_user
@@ -175,6 +177,18 @@ async def chat(
         response=result["response"],
         sources=result.get("sources", []),
         tool_calls=result.get("tool_calls", []),
+    )
+
+    # Persist conversation turn outside the agent layer
+    asyncio.create_task(
+        save_conversation_turn(
+            user_id=effective_user_id,
+            session_id=result.get("session_id", ""),
+            message=payload.message,
+            response_text=result["response"],
+            sources=result.get("sources", []),
+            tool_calls=result.get("tool_calls", []),
+        )
     )
 
     # Cache the successful response for idempotent retries (only if key supplied)

@@ -6,17 +6,16 @@ Core ADK Agent definition and runner for the OmniCare Assistant.
 Configures the Google ADK LlmAgent with LiteLLM for model routing,
 registers all tools, and provides the async run_agent() function
 for the FastAPI endpoints to call.
+
+The agent is intentionally framework-agnostic: it does not import or
+touch the database. Persistence is handled by the API layer via
+``app.agent.conversation_store``.
 """
 
 import logging
 import os
 import uuid
 from typing import Any
-from app.database import async_session_factory
-from app.models.conversation import Conversation
-from sqlalchemy import select
-from sqlalchemy.orm.attributes import flag_modified
-from datetime import datetime, UTC
 
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
@@ -136,7 +135,8 @@ async def run_agent(user_id: str, message: str) -> dict[str, Any]:
         message: The user's chat message.
 
     Returns:
-        Dict with keys: response (str), sources (list), tool_calls (list)
+        Dict with keys: response (str), sources (list), tool_calls (list),
+        session_id (str)
     """
     session_id = await _ensure_session(user_id)
 
@@ -208,57 +208,11 @@ async def run_agent(user_id: str, message: str) -> dict[str, Any]:
         else "I'm sorry, I couldn't generate a response. Please try again."
     )
 
-    # Save to database continuously for absolute data durability
-    try:
-        async with async_session_factory() as db_session:
-            conv = (
-                await db_session.execute(
-                    select(Conversation).where(
-                        Conversation.session_id == session_id
-                    )
-                )
-            ).scalar_one_or_none()
-
-            new_msgs = [
-                {
-                    "id": str(uuid.uuid4()),
-                    "role": "user",
-                    "content": message,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "role": "assistant",
-                    "content": response_text,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "sources": sources,
-                    "tool_calls": tool_calls,
-                },
-            ]
-
-            if conv is None:
-                title = message[:40] + ("..." if len(message) > 40 else "")
-                conv = Conversation(
-                    user_id=uuid.UUID(user_id),
-                    session_id=session_id,
-                    title=title,
-                    messages=new_msgs,
-                )
-                db_session.add(conv)
-            else:
-                conv.messages.extend(new_msgs)
-                flag_modified(conv, "messages")
-
-            await db_session.commit()
-    except Exception as e:
-        logger.error(
-            "Failed to auto-save conversation to DB: %s", e, exc_info=True
-        )
-
     return {
         "response": response_text,
         "sources": sources,
         "tool_calls": tool_calls,
+        "session_id": session_id,
     }
 
 
@@ -341,48 +295,4 @@ async def run_agent_stream(user_id: str, message: str) -> AsyncGenerator[str, No
         else "I'm sorry, I couldn't generate a response."
     )
 
-    # Save to database
-    try:
-        async with async_session_factory() as db_session:
-            conv = (
-                await db_session.execute(
-                    select(Conversation).where(
-                        Conversation.session_id == session_id
-                    )
-                )
-            ).scalar_one_or_none()
-            new_msgs = [
-                {
-                    "id": str(uuid.uuid4()),
-                    "role": "user",
-                    "content": message,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                },
-                {
-                    "id": str(uuid.uuid4()),
-                    "role": "assistant",
-                    "content": response_text,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                    "sources": sources,
-                    "tool_calls": tool_calls,
-                },
-            ]
 
-            if conv is None:
-                title = message[:40] + ("..." if len(message) > 40 else "")
-                conv = Conversation(
-                    user_id=uuid.UUID(user_id),
-                    session_id=session_id,
-                    title=title,
-                    messages=new_msgs,
-                )
-                db_session.add(conv)
-            else:
-                conv.messages.extend(new_msgs)
-                flag_modified(conv, "messages")
-
-            await db_session.commit()
-    except Exception as e:
-        logger.error(
-            "Failed to auto-save conversation to DB: %s", e, exc_info=True
-        )
