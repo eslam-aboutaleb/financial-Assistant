@@ -25,6 +25,7 @@ def isolated_chroma_dir():
     """Provide an isolated temporary ChromaDB directory for E2E tests."""
     from app.config import get_settings
     from app.rag.retriever import _collection_cache
+
     original_chroma_path = get_settings().chroma_db_path
     original_collection_name = get_settings().chroma_collection_name
     temp_dir = tempfile.mkdtemp(prefix="chroma_e2e_")
@@ -41,6 +42,7 @@ def isolated_chroma_dir():
         get_settings.cache_clear()
         _collection_cache.clear()
         import shutil
+
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
@@ -52,10 +54,13 @@ def e2e_user(test_client):
     """
     username = f"e2e_user_{__import__('uuid').uuid4().hex[:8]}"
     password = "E2ePass123!"
-    signup_response = test_client.post("/api/v1/auth/signup", json={
-        "username": username,
-        "password": password,
-    })
+    signup_response = test_client.post(
+        "/api/v1/auth/signup",
+        json={
+            "username": username,
+            "password": password,
+        },
+    )
     assert signup_response.status_code == 201, f"Failed to create E2E user: {signup_response.text}"
     token = signup_response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
@@ -68,7 +73,6 @@ def e2e_user(test_client):
 class TestLiveLLMChatE2E:
     """End-to-end chat tests using the real LLM pipeline."""
 
-    @pytest.mark.skip(reason="ChromaDB persistent state in test environment causes embedding dimension mismatch; production container verified working.")
     def test_policy_rag_returns_citations(self, test_client, e2e_user, isolated_chroma_dir):
         """
         Ask a policy coverage question and verify the live agent returns
@@ -92,7 +96,10 @@ class TestLiveLLMChatE2E:
         response_text = data["response"].lower()
         assert "water damage" in response_text or "pipe burst" in response_text
         assert len(data["sources"]) > 0, "Expected at least one policy citation"
-        assert any("section" in source.lower() or "sample_policy" in source.lower() for source in data["sources"])
+        assert any(
+            "section" in source.lower() or "sample_policy" in source.lower()
+            for source in data["sources"]
+        )
 
     def test_claim_status_lookup(self, test_client, e2e_user, isolated_chroma_dir):
         """

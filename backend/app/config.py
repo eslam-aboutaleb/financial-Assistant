@@ -160,7 +160,9 @@ class Settings(BaseSettings):
         return value
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Resolve .env relative to this file's project root so settings load
+        # consistently regardless of the current working directory.
+        env_file=str(Path(__file__).resolve().parents[2] / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",  # Reject unknown env vars to catch typos early,
         case_sensitive=False,

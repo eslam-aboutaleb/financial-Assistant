@@ -185,8 +185,7 @@ async def _write_chunks_to_postgres(chunks: list[dict[str, Any]]) -> None:
         logger.info("Wrote %d policy chunks to Postgres for BM25 fallback.", len(chunks))
     except Exception as exc:
         logger.warning(
-            "Could not write policy chunks to Postgres "
-            "(BM25 fallback unavailable): %s",
+            "Could not write policy chunks to Postgres " "(BM25 fallback unavailable): %s",
             exc,
         )
 
@@ -253,6 +252,7 @@ def ingest_policy(
     # At Docker build time Postgres is not available, so we fire-and-forget.
     try:
         import asyncio
+
         loop = asyncio.get_event_loop()
         if loop.is_running():
             # In a running event loop (e.g. lifespan), schedule as a task
@@ -263,6 +263,7 @@ def ingest_policy(
         # No event loop (e.g. synchronous build-time invocation)
         try:
             import asyncio
+
             asyncio.run(_write_chunks_to_postgres(chunks))
         except Exception as exc:
             logger.warning("Could not write policy chunks to Postgres during ingestion: %s", exc)

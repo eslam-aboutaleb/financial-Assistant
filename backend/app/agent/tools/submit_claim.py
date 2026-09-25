@@ -55,8 +55,7 @@ async def submit_claim(
         )
     except ValidationError as exc:
         errors = [
-            f"{err['loc'][-1] if err['loc'] else 'field'}: {err['msg']}"
-            for err in exc.errors()
+            f"{err['loc'][-1] if err['loc'] else 'field'}: {err['msg']}" for err in exc.errors()
         ]
         logger.warning("Claim submission validation failed: %s", errors)
         return {"success": False, "validation_errors": errors}

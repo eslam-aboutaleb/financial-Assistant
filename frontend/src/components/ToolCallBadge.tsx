@@ -1,7 +1,24 @@
+/**
+ * ToolCallBadge component.
+ *
+ * Renders a transparent view of the AI agent's tool invocations during a
+ * single assistant message. For standard tools (e.g. ``query_policy``) it
+ * shows an expandable details element with arguments and raw JSON result.
+ * For richer tools (``get_claim_status``, ``submit_claim``) it renders
+ * a purpose-built status card or claim receipt for readability.
+ *
+ * Design rationale:
+ *   - Tool transparency builds user trust by showing exactly what the agent
+ *     did to arrive at its answer.
+ *   - Rich UIs for claim tools reduce cognitive load compared to raw JSON.
+ *   - The details/summary pattern keeps the default view compact.
+ */
+
 import { ToolCall } from "@/types/chat";
 import { ChevronDown, CheckCircle2, AlertCircle } from "lucide-react";
 
 interface ToolCallBadgeProps {
+  /** Array of tool calls made during the generation of an assistant message. */
   toolCalls: ToolCall[];
 }
 

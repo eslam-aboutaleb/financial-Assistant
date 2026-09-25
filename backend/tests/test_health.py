@@ -7,7 +7,6 @@ Tests:
 - test_health_method_post_not_allowed: Verifies POST method is rejected with HTTP 405 Method Not Allowed
 """
 
-
 from app.schemas.models import HealthResponse
 
 
@@ -18,13 +17,13 @@ def test_health_returns_200(test_client):
     """
     response = test_client.get("/api/v1/health")
 
-    assert response.status_code == 200, (
-        f"Expected status code 200, got {response.status_code}. Response: {response.text}"
-    )
+    assert (
+        response.status_code == 200
+    ), f"Expected status code 200, got {response.status_code}. Response: {response.text}"
     data = response.json()
-    assert data == {"status": "healthy"}, (
-        f"Expected response body {{'status': 'healthy'}}, got: {data}"
-    )
+    assert data == {
+        "status": "healthy"
+    }, f"Expected response body {{'status': 'healthy'}}, got: {data}"
 
 
 def test_health_response_schema(test_client):
@@ -40,12 +39,12 @@ def test_health_response_schema(test_client):
     data = response.json()
 
     # Exact key set assertion - no extra or missing fields
-    assert set(data.keys()) == {"status"}, (
-        f"Expected exact keys {{'status'}}, got: {set(data.keys())}"
-    )
-    assert isinstance(data["status"], str), (
-        f"Expected 'status' to be a string, got {type(data['status'])}"
-    )
+    assert set(data.keys()) == {
+        "status"
+    }, f"Expected exact keys {{'status'}}, got: {set(data.keys())}"
+    assert isinstance(
+        data["status"], str
+    ), f"Expected 'status' to be a string, got {type(data['status'])}"
     assert data["status"] == "healthy"
 
     # Validate against Pydantic model
@@ -60,9 +59,9 @@ def test_health_method_post_not_allowed(test_client):
     """
     response = test_client.post("/api/v1/health", json={"dummy": "data"})
 
-    assert response.status_code == 405, (
-        f"Expected status code 405 Method Not Allowed for POST, got {response.status_code}"
-    )
+    assert (
+        response.status_code == 405
+    ), f"Expected status code 405 Method Not Allowed for POST, got {response.status_code}"
 
 
 def test_health_unhealthy_returns_503(test_client, monkeypatch):
@@ -72,20 +71,15 @@ def test_health_unhealthy_returns_503(test_client, monkeypatch):
     """
     from unittest.mock import AsyncMock
 
-    fake_session = AsyncMock()
-    fake_session.execute.side_effect = Exception("DB Down")
+    def mock_wait_for_side_effect(coro, *args, **kwargs):
+        coro.close()
+        raise Exception("DB Down")
 
-    async def override_get_db():
-        yield fake_session
+    mock_wait_for = AsyncMock(side_effect=mock_wait_for_side_effect)
+    monkeypatch.setattr("app.api.v1.health.asyncio.wait_for", mock_wait_for)
 
-    from app.main import app
-    from app.database import get_db
-    app.dependency_overrides[get_db] = override_get_db
-    try:
-        response = test_client.get("/api/v1/health")
+    response = test_client.get("/api/v1/health")
 
-        assert response.status_code == 503
-        data = response.json()
-        assert data["status"] == "unhealthy"
-    finally:
-        app.dependency_overrides.pop(get_db, None)
+    assert response.status_code == 503
+    data = response.json()
+    assert data["status"] == "unhealthy"

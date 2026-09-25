@@ -48,9 +48,9 @@ def test_ingest_creates_collection(tmp_path):
     collections = client.list_collections()
     collection_names = [col.name if hasattr(col, "name") else str(col) for col in collections]
 
-    assert settings.chroma_collection_name in collection_names, (
-        f"Collection '{settings.chroma_collection_name}' not found in Chroma. Existing: {collection_names}"
-    )
+    assert (
+        settings.chroma_collection_name in collection_names
+    ), f"Collection '{settings.chroma_collection_name}' not found in Chroma. Existing: {collection_names}"
 
     col = client.get_collection(name=settings.chroma_collection_name)
     assert col.count() == count, f"Expected {count} items in collection, found {col.count()}"
@@ -67,12 +67,12 @@ def test_retrieve_water_damage_query(rag_chroma_dir):
     assert len(results) > 0, "No results returned for water damage query"
 
     combined_text = " ".join(r["document"] for r in results)
-    assert "pipe bursts" in combined_text.lower(), (
-        f"Expected 'pipe bursts' in retrieved text. Retrieved: {combined_text}"
-    )
-    assert "$25,000" in combined_text, (
-        f"Expected '$25,000' in retrieved text. Retrieved: {combined_text}"
-    )
+    assert (
+        "pipe bursts" in combined_text.lower()
+    ), f"Expected 'pipe bursts' in retrieved text. Retrieved: {combined_text}"
+    assert (
+        "$25,000" in combined_text
+    ), f"Expected '$25,000' in retrieved text. Retrieved: {combined_text}"
 
 
 def test_retrieve_personal_property_query(rag_chroma_dir):
@@ -85,12 +85,12 @@ def test_retrieve_personal_property_query(rag_chroma_dir):
     assert len(results) > 0, "No results returned for electronics coverage query"
 
     combined_text = " ".join(r["document"] for r in results)
-    assert "$10,000" in combined_text, (
-        f"Expected '$10,000' in retrieved text. Retrieved: {combined_text}"
-    )
-    assert "personal property" in combined_text.lower(), (
-        f"Expected 'personal property' in retrieved text. Retrieved: {combined_text}"
-    )
+    assert (
+        "$10,000" in combined_text
+    ), f"Expected '$10,000' in retrieved text. Retrieved: {combined_text}"
+    assert (
+        "personal property" in combined_text.lower()
+    ), f"Expected 'personal property' in retrieved text. Retrieved: {combined_text}"
 
 
 def test_retrieve_returns_metadata(rag_chroma_dir):

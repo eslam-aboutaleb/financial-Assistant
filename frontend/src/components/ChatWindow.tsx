@@ -6,27 +6,16 @@
  * mutation, and auto-scrolls to the latest message.
  *
  * Modes of operation:
- *   - New chat (``historyId`` is null): User can send messages, which are
+ *   - New chat (historyId is null): User can send messages, which are
  *     appended to local state on success.
- *   - Archived chat (``historyId`` is set): The window is read-only; messages
+ *   - Archived chat (historyId is set): The window is read-only; messages
  *     are loaded from the backend and the input area is replaced with a
  *     notice telling the user to start a new chat.
- *
- * Data flow:
- *   - ``useQuery`` loads history when ``historyId`` changes.
- *   - ``useMutation`` sends new messages and appends the assistant response.
- *   - ``onMessageSent`` notifies the parent to refresh the sidebar list.
  */
 
-
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Message } from "@/types/chat";
-import { sendMessage, getConversationHistory } from "@/lib/api";
+import { useChatMessages } from "@/hooks/useChatMessages";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
-import { toast } from "react-hot-toast";
-import { useAuth } from "@/context/AuthContext";
-import { useMutation, useQuery } from "@tanstack/react-query";
 import { StopCircle, RefreshCw, ChevronDown, Shield } from "lucide-react";
 
 interface ChatWindowProps {
@@ -43,147 +32,24 @@ export default function ChatWindow({
   historyId,
   onMessageSent,
 }: ChatWindowProps) {
-  const { token } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [showScrollButton, setShowScrollButton] = useState(false);
-  const [hasError, setHasError] = useState(false);
-
-  // Load conversation history when viewing an archived chat.
   const {
-    data: historyData,
-    isLoading: isLoadingHistory,
-    isError: isErrorHistory,
-  } = useQuery({
-    queryKey: ["conversation", historyId],
-    queryFn: () => getConversationHistory(token!, historyId!),
-    enabled: !!historyId && !!token,
+    messages,
+    messagesEndRef,
+    scrollRef,
+    showScrollButton,
+    hasError,
+    isReadOnly,
+    chatMutation,
+    scrollToBottom,
+    handleScroll,
+    handleSendMessage,
+    handleStopGeneration,
+    handleRetryLast,
+  } = useChatMessages({
+    onNewChat,
+    historyId,
+    onMessageSent,
   });
-
-  useEffect(() => {
-    if (historyData?.messages) {
-      setMessages(
-        historyData.messages.map((m: { id?: string; role: Message["role"]; content: string; timestamp?: string; sources?: string[]; tool_calls?: Message["toolCalls"] }) => ({
-          id: m.id || Date.now().toString(),
-          role: m.role,
-          content: m.content,
-          timestamp: new Date(m.timestamp || Date.now()),
-          sources: m.sources,
-          toolCalls: m.tool_calls,
-        })) satisfies Message[],
-      );
-    }
-  }, [historyData]);
-
-  // Mutation for sending new chat messages.
-  const chatMutation = useMutation({
-    mutationFn: (content: string) => sendMessage(token, content),
-    onSuccess: (data) => {
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: data.response,
-        timestamp: new Date(),
-        sources: data.sources,
-        toolCalls: data.tool_calls,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      setHasError(false);
-      if (onMessageSent) onMessageSent();
-    },
-    onError: () => {
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "error",
-        content: "An unexpected error occurred while processing your request. Please try again later.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-      setHasError(true);
-    },
-  });
-
-  const isReadOnly = !!historyId;
-  const isLoading = chatMutation.isPending || isLoadingHistory;
-
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
-  }, []);
-
-  useEffect(() => {
-    scrollToBottom("smooth");
-  }, [messages, scrollToBottom]);
-
-  const handleScroll = useCallback(() => {
-    if (!scrollRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    setShowScrollButton(scrollHeight - scrollTop - clientHeight > 120);
-  }, []);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, [handleScroll]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "n") {
-        e.preventDefault();
-        onNewChat();
-      }
-      if (
-        e.key === "/" &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        document.activeElement?.tagName !== "TEXTAREA" &&
-        document.activeElement?.tagName !== "INPUT"
-      ) {
-        e.preventDefault();
-        const textarea = document.getElementById("chat-textarea");
-        if (textarea) (textarea as HTMLTextAreaElement).focus();
-      }
-      if (e.key === "Escape") {
-        const sidebarOverlay = document.getElementById("sidebar-overlay");
-        if (sidebarOverlay) sidebarOverlay.click();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onNewChat]);
-
-  const handleSendMessage = (content: string) => {
-    if (!content.trim() || !token) return;
-    setHasError(false);
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content,
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userMessage]);
-    chatMutation.mutate(content);
-  };
-
-  const handleStopGeneration = useCallback(() => {
-    chatMutation.reset();
-    toast.success("Stopped generating");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatMutation]);
-
-  const handleRetryLast = useCallback(() => {
-    const lastUserMessageIndex = [...messages].reverse().findIndex((m) => m.role === "user");
-    if (lastUserMessageIndex !== -1) {
-      const actualIndex = messages.length - 1 - lastUserMessageIndex;
-      setMessages((prev) => prev.slice(0, actualIndex + 1));
-      setHasError(false);
-      const lastUserMessage = messages[actualIndex];
-      chatMutation.mutate(lastUserMessage.content);
-    }
-  }, [chatMutation, messages]);
 
   return (
     <div
