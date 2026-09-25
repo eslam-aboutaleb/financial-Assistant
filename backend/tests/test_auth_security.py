@@ -286,7 +286,7 @@ class TestJWT:
         """Tampered tokens (wrong signature) raise _InvalidTokenError."""
         user_id = uuid.uuid4()
         payload = {"sub": str(user_id), "exp": datetime.now(tz=UTC) + timedelta(hours=1)}
-        tampered = jwt.encode(payload, "wrong-secret-key", algorithm=ALGORITHM)
+        tampered = jwt.encode(payload, "a-long-enough-dev-secret-key-for-testing-purposes", algorithm=ALGORITHM)
         with pytest.raises(_InvalidTokenError):
             _decode_token(tampered)
 

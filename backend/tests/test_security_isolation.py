@@ -253,7 +253,7 @@ class TestTokenForgery:
             "sub": str(uuid.uuid4()),
             "exp": datetime.now(tz=UTC) + timedelta(hours=1),
         }
-        wrong_token = jwt.encode(wrong_secret_payload, "wrong-secret-key", algorithm="HS256")
+        wrong_token = jwt.encode(wrong_secret_payload, "this-is-a-long-enough-wrong-secret-key-for-testing", algorithm="HS256")
         response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
             "Authorization": f"Bearer {wrong_token}"
         })

@@ -38,7 +38,18 @@ from app.agent.context import current_user_id
 
 # JWT configuration. ``JWT_SECRET_KEY`` must be set in production; the
 # fallback value is for local development only.
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super-secret-key-for-development-only-change-me")
+_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
+if _SECRET_KEY is None or len(_SECRET_KEY) < 32:
+    _SECRET_KEY = "dev-only-omnicare-financial-secret-key-change-me-in-production"
+    if not os.environ.get("JWT_SECRET_KEY"):
+        import warnings
+        warnings.warn(
+            "JWT_SECRET_KEY is not set or too short. Using an insecure development fallback. "
+            "Set JWT_SECRET_KEY to at least 32 random bytes in production.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+SECRET_KEY = _SECRET_KEY
 ALGORITHM = "HS256"
 # Access tokens are long-lived (1 week) because the session is cookie-based.
 # For higher-security contexts, consider shorter TTLs with refresh tokens.
