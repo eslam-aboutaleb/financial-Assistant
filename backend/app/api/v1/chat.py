@@ -1,9 +1,11 @@
-from __future__ import annotations
 
 """
 Chat endpoint.
+
 POST /api/v1/chat - Routes customer inquiries through the OmniCare AI agent.
 POST /api/v1/chat/reset - Resets the authenticated user's conversation session.
+GET  /api/v1/chat/conversations - Lists the user's past conversations.
+GET  /api/v1/chat/conversations/{id} - Retrieves a single conversation history.
 
 Idempotency:
   Clients MAY send an ``Idempotency-Key`` header (opaque string, max 128 chars).
@@ -27,10 +29,15 @@ from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response
 
 from app.agent.agent import run_agent, reset_user_session
 from app.config import Settings, get_settings
-from app.idempotency import get_cached_response, store_response
+from app.idempotency import get_cached_response, store_response, idempotent_endpoint
 from app.auth import get_current_user
+from app.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, desc
+from app.models.conversation import Conversation
+import uuid
 
-from app.schemas.models import ChatRequest, ChatResponse, ErrorResponse
+from app.schemas.models import ChatRequest, ChatResponse, ErrorResponse, ConversationListResponse, ConversationDetailResponse
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +81,10 @@ STATUS_422 = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422)
     },
 )
 @limiter.limit("20/minute")
+@idempotent_endpoint()
 async def chat(
-    request: Request,
     payload: ChatRequest,
+    request: Request,
     response: Response,
     current_user_id: str = Depends(get_current_user),
     current_settings: Settings = Depends(get_settings),
@@ -91,8 +99,7 @@ async def chat(
         ),
     ),
 ) -> ChatResponse:
-    """
-    Process a user chat message through the OmniCare AI agent.
+    """Process a user chat message through the OmniCare AI agent.
 
     Executes:
     1. Idempotency check -- return cached response if explicit Idempotency-Key was supplied.
@@ -107,15 +114,6 @@ async def chat(
         and tool call traces. Replayed (cached) responses are indicated by
         the ``X-Idempotent-Replayed: true`` header.
     """
-    # ── Idempotency check (explicit key only) ──────────────────────────────
-    if idempotency_key:
-        cached = get_cached_response(idempotency_key)
-        if cached is not None:
-            response.headers["X-Idempotent-Replayed"] = "true"
-            response.headers["X-Idempotency-Key"] = idempotency_key
-            return ChatResponse(**cached)
-
-    # ── Execute agent (first call, cache miss, or no key supplied) ─────────
     try:
         result: dict[str, Any] = await run_agent(
             user_id=current_user_id,
@@ -145,14 +143,11 @@ async def chat(
             current_user_id,
             e,
         )
-        # Sanitize internal errors in production; expose details only in development
+        # Always return a generic, user-friendly error message.
+        # Internal details are logged server-side only.
         error_detail = (
-            f"An error occurred while processing your request: {e!s}"
-            if current_settings.environment in ("development", "test")
-            else (
-                "An unexpected error occurred while processing your request. "
-                "Please try again later."
-            )
+            "An unexpected error occurred while processing your request. "
+            "Please try again later."
         )
         # NOTE: Errors are intentionally NOT cached -- the client should retry on failure.
         raise HTTPException(
@@ -173,8 +168,7 @@ async def reset_chat(
     response: Response,
     current_user_id: str = Depends(get_current_user),
 ) -> Response:
-    """
-    Reset the conversation session for the authenticated user.
+    """Reset the conversation session for the authenticated user.
 
     This clears the ADK InMemorySessionService session so the next message
     from this user starts with a fresh conversation context.
@@ -183,3 +177,113 @@ async def reset_chat(
     logger.info("Reset chat session for user '%s'.", current_user_id)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
+
+
+@router.get(
+    "/chat/conversations",
+    response_model=ConversationListResponse,
+    summary="List Conversations",
+    description="Returns metadata for all conversations belonging to the authenticated user.",
+)
+async def list_conversations(
+    current_user_id: str = Depends(get_current_user),
+) -> ConversationListResponse:
+    """List all conversations for the authenticated user.
+
+    Returns:
+        ConversationListResponse: A list of conversation metadata objects
+        including id, title, and timestamps, ordered by most recently updated.
+    """
+    from app.database import async_session_factory
+    async with async_session_factory() as session:
+        stmt = select(Conversation).where(Conversation.user_id == uuid.UUID(current_user_id)).order_by(desc(Conversation.updated_at))
+        result = await session.execute(stmt)
+        conversations = result.scalars().all()
+
+    return ConversationListResponse(
+        conversations=[
+            {
+                "id": c.id,
+                "title": c.title,
+                "created_at": c.created_at,
+                "updated_at": c.updated_at
+            }
+            for c in conversations
+        ]
+    )
+
+
+@router.get(
+    "/chat/conversations/{conversation_id}",
+    response_model=ConversationDetailResponse,
+    summary="Get Conversation History",
+    description="Returns the full message history for a specific conversation, ensuring the user owns it.",
+)
+async def get_conversation(
+    conversation_id: str,
+    current_user_id: str = Depends(get_current_user),
+) -> ConversationDetailResponse:
+    """Retrieve the full history of a single conversation.
+
+    Validates that the conversation belongs to the authenticated user before
+    returning it, preventing horizontal privilege escalation.
+
+    Args:
+        conversation_id: The UUID of the conversation to retrieve.
+
+    Returns:
+        ConversationDetailResponse: The conversation metadata plus the full
+        list of messages.
+
+    Raises:
+        HTTPException: 400 if the conversation ID is malformed, 404 if the
+        conversation does not exist or does not belong to the user.
+    """
+    try:
+        conv_uuid = uuid.UUID(conversation_id)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail="Invalid conversation ID") from err
+
+    from app.database import async_session_factory
+    async with async_session_factory() as session:
+        conv = (await session.execute(
+            select(Conversation)
+            .where(Conversation.id == conv_uuid)
+            .where(Conversation.user_id == uuid.UUID(current_user_id))
+        )).scalar_one_or_none()
+
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    return ConversationDetailResponse(
+        id=conv.id,
+        title=conv.title,
+        created_at=conv.created_at,
+        updated_at=conv.updated_at,
+        messages=conv.messages
+    )
+
+
+from fastapi.responses import StreamingResponse
+from app.agent.agent import run_agent_stream
+
+@router.post(
+    "/chat/stream",
+    summary="Stream Chat Interaction",
+    description="Stream ADK SSE events.",
+)
+@limiter.limit("20/minute")
+async def chat_stream(
+    payload: ChatRequest,
+    request: Request,
+    current_user_id: str = Depends(get_current_user),
+) -> StreamingResponse:
+    try:
+        generator = run_agent_stream(
+            user_id=current_user_id,
+            message=payload.message,
+        )
+        return StreamingResponse(generator, media_type="text/event-stream")
+    except Exception as err:
+        logger.exception("Error in chat_stream: %s", err)
+        raise HTTPException(status_code=500, detail="Streaming failed") from err

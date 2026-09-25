@@ -8,7 +8,7 @@ lifespan events (RAG ingestion on startup), and mounts the v1 API router.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -78,6 +78,8 @@ async def lifespan(app: FastAPI):
     yield  # Server is running and receiving traffic
 
     logger.info(f"Shutting down {settings.app_name}...")
+    from app.database import engine
+    await engine.dispose()
 
 
 # Initialize the FastAPI application
@@ -144,3 +146,44 @@ app.add_middleware(SlowAPIMiddleware)
 
 # Mount API v1 router
 app.include_router(v1_router)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(
+    request: Request,
+    exc: HTTPException,
+) -> JSONResponse:
+    """
+    Convert all HTTPExceptions into a standardized ErrorResponse envelope.
+    
+    This ensures 401, 403, 404, 422, 500, etc. all return the same
+    {"error": {"code": "...", "message": "...", "details": ...}} shape.
+    """
+    logger.warning(
+        "HTTP %s on %s %s: %s",
+        exc.status_code,
+        request.method,
+        request.url.path,
+        exc.detail,
+    )
+    # Map status codes to error codes
+    code_map = {
+        400: "BAD_REQUEST",
+        401: "UNAUTHORIZED",
+        403: "FORBIDDEN",
+        404: "NOT_FOUND",
+        409: "CONFLICT",
+        422: "VALIDATION_ERROR",
+        429: "RATE_LIMIT_EXCEEDED",
+        500: "INTERNAL_ERROR",
+        503: "SERVICE_UNAVAILABLE",
+    }
+    error = ErrorDetail(
+        code=code_map.get(exc.status_code, "HTTP_ERROR"),
+        message=exc.detail if isinstance(exc.detail, str) else str(exc.detail),
+        details=None,
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=ErrorResponse(error=error).model_dump(),
+    )
