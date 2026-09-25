@@ -248,20 +248,27 @@ class TestChatIdempotency:
 
     def test_different_users_same_message_not_shared(self, test_client, mock_current_user):
         """Without explicit keys, two users with the same message are processed independently."""
+        # Disable rate limiter for this test to avoid 429 blocking the second request
+        from app.main import app; app.state.limiter.enabled = False; 
         with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = _MOCK_RESPONSE
 
-            test_client.post(
+            # First user
+            headers1 = mock_current_user
+            # Second user with a different user-id
+            headers2 = {"Authorization": "Bearer test-token-for-00000000-0000-0000-0000-000000000002"}
+
+            res1 = test_client.post(
                 "/api/v1/chat",
                 json={"message": "water damage"},
-                headers=mock_current_user,
+                headers=headers1,
             )
-            res = test_client.post(
+            res2 = test_client.post(
                 "/api/v1/chat",
                 json={"message": "water damage"},
-                headers=mock_current_user,
+                headers=headers2,
             )
 
         # Second user should NOT get a replayed response
-        assert res.headers.get("X-Idempotent-Replayed") != "true"
+        assert res2.headers.get("X-Idempotent-Replayed") != "true"
         assert mock_run.await_count == 2

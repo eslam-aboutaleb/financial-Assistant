@@ -1,4 +1,7 @@
+
 from __future__ import annotations
+import uuid
+from datetime import datetime
 
 """
 Pydantic models for API request/response schemas, error envelopes, and data validation.
@@ -141,3 +144,20 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     user_id: str
+
+class ConversationMetadata(BaseModel):
+    id: uuid.UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+class ConversationListResponse(BaseModel):
+    conversations: list[ConversationMetadata]
+
+class ConversationDetailResponse(ConversationMetadata):
+    messages: list[dict[str, Any]]
+
+
+# Rebuild models that reference uuid
+ConversationListResponse.model_rebuild()
+ConversationDetailResponse.model_rebuild()

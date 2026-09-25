@@ -72,14 +72,19 @@ def test_health_unhealthy_returns_503(test_client, monkeypatch):
     Test that GET /api/v1/health returns HTTP 503 Service Unavailable
     when the underlying datastore is inaccessible.
     """
-    with patch.object(Path, "mkdir", side_effect=PermissionError("Permission denied")):
-        # Point to a non-existent directory that cannot be created
-        monkeypatch.setattr(
-            "app.api.v1.health.settings.claims_file_path",
-            "/nonexistent_root_dir/sub/claims.json",
-        )
+    # Override get_db dependency to raise an Exception
+    async def override_get_db():
+        raise Exception("DB Down")
+        yield
+
+    from app.main import app
+    from app.database import get_db
+    app.dependency_overrides[get_db] = override_get_db
+    try:
         response = test_client.get("/api/v1/health")
 
         assert response.status_code == 503
         data = response.json()
         assert data["status"] == "unhealthy"
+    finally:
+        app.dependency_overrides.pop(get_db, None)

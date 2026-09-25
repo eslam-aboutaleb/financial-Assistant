@@ -4,12 +4,12 @@ GET /api/v1/health - Evaluates and returns service operational status.
 """
 
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, Response, status
 
-from app.config import settings
 from app.schemas.models import HealthResponse
+from app.database import async_session_factory
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -36,25 +36,21 @@ router = APIRouter()
         },
     },
 )
-async def health_check(response: Response) -> HealthResponse:
+async def health_check(response: Response, session: AsyncSession = Depends(get_db)) -> HealthResponse:
     """
     Evaluates backend system health and dependency availability.
 
     Verifies:
     1. Core API server execution.
-    2. Accessibility of filesystem datastores (claims file directory).
+    2. Postgres database connection.
 
     Returns:
         HealthResponse indicating 'healthy' (HTTP 200) or 'unhealthy' (HTTP 503).
     """
-    # Verify claims storage accessibility
     try:
-        claims_path = Path(settings.claims_file_path)
-        claims_parent = claims_path.parent
-        if not claims_parent.exists():
-            claims_parent.mkdir(parents=True, exist_ok=True)
+        await session.execute(text("SELECT 1"))
     except Exception as e:
-        logger.error(f"Health check dependency failure: {e}")
+        logger.error(f"Health check dependency failure (Postgres): {e}")
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return HealthResponse(status="unhealthy")
 
