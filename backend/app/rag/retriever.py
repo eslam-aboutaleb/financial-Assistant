@@ -16,13 +16,10 @@ import logging
 from typing import Any
 
 import chromadb
-from app.rag.embedding import EmbeddingFactory
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session_factory
-from app.models.policy_chunk import PolicyChunk
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +59,8 @@ def get_collection(
         )
         client = chromadb.PersistentClient(path=chroma_path)
         from app.rag.embedding import EmbeddingFactory
-        embed_fn = EmbeddingFactory.get_embedding_function(
 
-        )
+        embed_fn = EmbeddingFactory.get_embedding_function()
         _collection_cache[cache_key] = client.get_or_create_collection(
             name=collection_name,
             embedding_function=embed_fn,
@@ -104,18 +100,20 @@ async def _bm25_fallback(query: str, n_results: int = 5) -> list[dict[str, Any]]
 
         retrieved: list[dict[str, Any]] = []
         for row in rows:
-            retrieved.append({
-                "document": row["text"],
-                "metadata": {
-                    "section": row["section"],
-                    "source": row["source"],
-                    "chunk_index": row["chunk_index"],
-                    "sub_chunk_index": row["sub_chunk_index"],
-                },
-                "distance": 0.0,
-                "_rank": float(row["rank"]),
-                "_source": "bm25",
-            })
+            retrieved.append(
+                {
+                    "document": row["text"],
+                    "metadata": {
+                        "section": row["section"],
+                        "source": row["source"],
+                        "chunk_index": row["chunk_index"],
+                        "sub_chunk_index": row["sub_chunk_index"],
+                    },
+                    "distance": 0.0,
+                    "_rank": float(row["rank"]),
+                    "_source": "bm25",
+                }
+            )
         return retrieved
     except Exception as exc:
         logger.warning("BM25 fallback search failed: %s", exc)

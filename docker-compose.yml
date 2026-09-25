@@ -1,21 +1,59 @@
+# ==============================================================================
+# OmniCare Financial - Production Docker Compose Configuration
+# ==============================================================================
+# Services:
+#   db       - PostgreSQL 16 database for claims, users, and conversations.
+#   backend  - FastAPI backend with Google ADK agent and LiteLLM routing.
+#   frontend - React/Vite frontend served with a static file server.
+#
+# Networking:
+#   All services communicate via the default Docker bridge network.
+#   The frontend accesses the backend through VITE_API_URL (http://localhost:8000).
+#
+# Volumes:
+#   chroma_data - Persistent ChromaDB vector store for policy embeddings.
+#   pg_data     - Persistent PostgreSQL data directory.
+#
+# Health Checks:
+#   Each service defines a healthcheck to ensure dependencies are ready
+#   before dependent services start. The frontend waits for the backend
+#   health check, and the backend waits for the database health check.
+# ==============================================================================
+
 services:
+  # ============================================================================
+  # Database Service
+  # ============================================================================
+  # PostgreSQL 16 on Alpine Linux for minimal image size.
+  # Stores all persistent data: users, claims, conversations, and policy chunks.
   db:
     image: postgres:16-alpine
     container_name: omnicare-db
     restart: unless-stopped
     environment:
+      # Database credentials loaded from .env file with fallback defaults.
+      # POSTGRES_PASSWORD is required and must be set in .env for production.
       POSTGRES_USER: ${POSTGRES_USER:-omnicare}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: omnicare
     ports:
+      # Expose PostgreSQL port for external tools (pgAdmin, DBeaver, etc.).
+      # Remove this in production or restrict to localhost for security.
       - "5432:5432"
     volumes:
+      # Persist database data across container restarts and recreations.
       - pg_data:/var/lib/postgresql/data
     healthcheck:
+      # Verify PostgreSQL is accepting connections before marking as healthy.
       test: ["CMD-SHELL", "pg_isready -U omnicare"]
       interval: 5s
       retries: 5
 
+  # ============================================================================
+  # Backend Service
+  # ============================================================================
+  # FastAPI backend with Google ADK agent, LiteLLM routing, ChromaDB RAG,
+  # and PostgreSQL persistence. Policy ingestion runs automatically on startup.
   backend:
     build:
       context: ./backend
@@ -25,34 +63,57 @@ services:
     ports:
       - "8000:8000"
     env_file:
+      # Load environment variables from the root .env file.
+      # Required variables: OPENAI_API_KEY, DATABASE_URL, POSTGRES_PASSWORD.
       - .env
     volumes:
+      # Persist ChromaDB vector store across container restarts.
       - chroma_data:/app/app/data/chroma_db
     depends_on:
+      # Wait for the database to be healthy before starting the backend.
       db:
         condition: service_healthy
     healthcheck:
+      # Verify the backend health endpoint is responding.
+      # The Python one-liner attempts to connect to /api/v1/health.
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
 
+  # ============================================================================
+  # Frontend Service
+  # ============================================================================
+  # React/Vite frontend built as a static site and served with `serve`.
+  # Communicates with the backend via the VITE_API_URL environment variable.
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://backend:8000
+        # Inject the backend API URL at build time.
+        # This is baked into the client bundle and cannot be changed at runtime.
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
     container_name: omnicare-frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      # Runtime environment variable for the frontend.
+      # Must match the build arg VITE_API_URL for consistency.
+      - VITE_API_URL=http://localhost:8000
     depends_on:
+      # Wait for the backend to be healthy before starting the frontend.
+      # This ensures the frontend can reach the backend API on startup.
       backend:
         condition: service_healthy
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+# Named volumes ensure data persists across container lifecycle events.
+# Driver is local (default), storing data on the host filesystem.
 
 volumes:
   chroma_data:

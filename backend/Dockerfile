@@ -29,6 +29,7 @@ RUN rm -rf /usr/local/bin/pip* /usr/local/lib/python*/site-packages/pip*
 
 # Copy backend application source code
 COPY app/ ./app/
+COPY tests/ ./tests/
 
 # Expose backend API port
 

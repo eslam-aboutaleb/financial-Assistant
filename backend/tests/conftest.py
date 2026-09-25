@@ -8,16 +8,32 @@ Provides fixtures for:
 - mock_current_user: Overrides the get_current_user dependency with a fixed test user ID
 """
 
+import asyncio
 import json
+import os
 import shutil
 import sys
+import warnings
 from pathlib import Path
 
-import os
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://omnicare:omnicare_password@localhost:5432/omnicare"
 import pytest
 from unittest.mock import patch
-patch("app.main.ingest_policy").start()
+
+
+def _in_docker() -> bool:
+    try:
+        return Path("/.dockerenv").exists() or (
+            Path("/proc/self/cgroup").exists()
+            and "docker" in Path("/proc/self/cgroup").read_text(errors="ignore")
+        )
+    except Exception:
+        return False
+
+
+DB_HOST = "db" if _in_docker() else "localhost"
+os.environ["DATABASE_URL"] = (
+    f"postgresql+asyncpg://omnicare:omnicare_password@{DB_HOST}:5432/omnicare"
+)
 
 # Ensure backend root is on sys.path
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -66,7 +82,6 @@ except ImportError:
             if not self.documents:
                 return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
 
-            # Score each document by token overlap with query string
             scores = []
             for doc in self.documents:
                 doc_lower = doc.lower()
@@ -129,11 +144,22 @@ except ImportError:
     fake_embed = types.ModuleType("chromadb.utils.embedding_functions")
 
     class FakeEmbeddingFunction:
-        def __init__(self, model_name=None):
-            self.model_name = model_name
+        def __init__(self, *args, **kwargs):
+            pass
 
         def __call__(self, input):
             return [[0.0] * 384 for _ in input]
+
+        def embed_query(self, input):
+            return self.__call__(input) if isinstance(input, list) else self.__call__([input])[0]
+
+        def embed_documents(self, input):
+            return self.__call__(input)
+
+        def name(self):
+            return "default"
+
+        is_legacy = False
 
     fake_embed.SentenceTransformerEmbeddingFunction = FakeEmbeddingFunction
     fake_embed.OpenAIEmbeddingFunction = FakeEmbeddingFunction
@@ -144,8 +170,9 @@ except ImportError:
     sys.modules["chromadb.utils"] = fake_utils
     sys.modules["chromadb.utils.embedding_functions"] = fake_embed
 
-import pytest
 
+# Patch ingest_policy to avoid network calls during test client startup
+patch("app.main.ingest_policy").start()
 
 
 @pytest.fixture(scope="function")
@@ -163,7 +190,6 @@ def sample_claims_path(tmp_path, monkeypatch):
     if original_claims.exists():
         shutil.copy(original_claims, temp_claims)
     else:
-        # Fallback baseline data if original file is missing
         baseline = [
             {
                 "claim_id": "CLM-8821",
@@ -184,7 +210,6 @@ def sample_claims_path(tmp_path, monkeypatch):
         ]
         temp_claims.write_text(json.dumps(baseline, indent=2), encoding="utf-8")
 
-    # Patch the settings path used by claim tools if the attribute exists
     if hasattr(settings, "claims_file_path"):
         monkeypatch.setattr(settings, "claims_file_path", str(temp_claims))
 
@@ -198,11 +223,23 @@ def test_client(sample_claims_path):
     """
     from fastapi.testclient import TestClient  # noqa: PLC0415
     from app.main import app  # noqa: PLC0415
-    from app.database import engine
+    from app.database import engine  # noqa: PLC0415
 
     with TestClient(app) as client:
         yield client
-        
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(engine.dispose())
+            else:
+                loop.run_until_complete(engine.dispose())
+    except Exception as exc:  # pragma: no cover - surfaced in test output
+        print(f"[test_client] engine dispose failed: {exc!r}")
+        raise
 
 
 @pytest.fixture(scope="function")
@@ -214,7 +251,6 @@ def mock_chroma_collection(tmp_path):
     import chromadb  # noqa: PLC0415
     from chromadb.utils import embedding_functions  # noqa: PLC0415
 
-    # Use ephemeral in-memory client
     client = chromadb.Client()
 
     embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
@@ -253,7 +289,7 @@ def mock_chroma_collection(tmp_path):
     return collection
 
 
-_TEST_USER_ID = "test-user-id"
+_TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
 @pytest.fixture(autouse=False)
@@ -277,12 +313,27 @@ def mock_current_user():
     app.dependency_overrides.pop(get_current_user, None)
 
 
-import chromadb.utils.embedding_functions as _ef
+# Patch chromadb OpenAIEmbeddingFunction to avoid real API calls in unit tests
+import chromadb.utils.embedding_functions as _ef  # noqa: PLC0415
+
+
 class FakeEmbeddingFunction:
-    def __init__(self, *args, **kwargs): pass
-    def __call__(self, input): return [[0.0] * 384 for _ in input]
-    def embed_query(self, input): return self.__call__(input) if isinstance(input, list) else self.__call__([input])[0]
-    def embed_documents(self, input): return self.__call__(input)
-    def name(self): return "default"
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __call__(self, input):
+        return [[0.0] * 384 for _ in input]
+
+    def embed_query(self, input):
+        return self.__call__(input) if isinstance(input, list) else self.__call__([input])[0]
+
+    def embed_documents(self, input):
+        return self.__call__(input)
+
+    def name(self):
+        return "default"
+
     is_legacy = False
+
+
 _ef.OpenAIEmbeddingFunction = FakeEmbeddingFunction

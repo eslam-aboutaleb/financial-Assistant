@@ -12,7 +12,7 @@ The backend is built with Python 3.11+ using an asynchronous, modular architectu
 
 ```mermaid
 graph TD
-    Client["Client Layer<br/>(Next.js Frontend / API Consumers)"]
+    Client["Client Layer<br/>(React Frontend / API Consumers)"]
 
     subgraph FastAPI_Service["FastAPI Application (Port 8000)"]
         CORS["CORS Middleware<br/>(Dynamic Origin Whitelist)"]

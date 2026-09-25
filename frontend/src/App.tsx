@@ -17,7 +17,6 @@
  *     the Sidebar's React Query to refetch the conversation list.
  */
 
-"use client";
 
 import { useState, useRef } from "react";
 import Sidebar from "@/components/Sidebar";
@@ -33,19 +32,19 @@ export default function Home() {
   const [chatKey, setChatKey] = useState(0);
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const { token, userId, isLoaded, login, logout } = useAuth();
+  const { userId, isLoaded, login, logout } = useAuth();
 
   // Wait for auth state to hydrate from localStorage before rendering.
   if (!isLoaded) return null;
 
   // Redirect to auth modal if not logged in.
-  if (!token || !userId) {
+  if (!userId) {
     return <AuthModal onAuthenticated={login} />;
   }
 
   const handleNewChat = async () => {
     try {
-      await resetChat(token);
+      await resetChat();
     } catch {
       // Best-effort reset UI even if the API call fails. The backend session
       // reset is a nice-to-have; the local state reset below ensures the

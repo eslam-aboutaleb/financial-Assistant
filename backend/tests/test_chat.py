@@ -59,9 +59,9 @@ def test_chat_valid_request(test_client, mock_current_user):
             headers=mock_current_user,
         )
 
-        assert response.status_code == 200, (
-            f"Expected status code 200, got {response.status_code}. Details: {response.text}"
-        )
+        assert (
+            response.status_code == 200
+        ), f"Expected status code 200, got {response.status_code}. Details: {response.text}"
 
         data = response.json()
 
@@ -82,7 +82,7 @@ def test_chat_valid_request(test_client, mock_current_user):
 
         # Verify mock was called with the authenticated user_id
         mock_run.assert_awaited_once_with(
-            user_id="test-user-id",
+            user_id="00000000-0000-0000-0000-000000000001",
             message="What is covered under water damage?",
         )
 
@@ -100,9 +100,9 @@ def test_chat_missing_message(test_client, mock_current_user):
         headers=mock_current_user,
     )
 
-    assert response.status_code == 422, (
-        f"Expected 422 Unprocessable Entity when message is omitted, got {response.status_code}"
-    )
+    assert (
+        response.status_code == 422
+    ), f"Expected 422 Unprocessable Entity when message is omitted, got {response.status_code}"
     data = response.json()
 
     # Standardized error envelope: {"error": {"code", "message", "details"}}
@@ -140,9 +140,9 @@ def test_chat_empty_message(test_client, mock_current_user):
             headers=mock_current_user,
         )
 
-        assert response.status_code == 200, (
-            f"Expected status code 200 for empty message string, got {response.status_code}"
-        )
+        assert (
+            response.status_code == 200
+        ), f"Expected status code 200 for empty message string, got {response.status_code}"
 
         data = response.json()
         assert "response" in data
@@ -152,7 +152,9 @@ def test_chat_empty_message(test_client, mock_current_user):
         assert data["sources"] == []
         assert data["tool_calls"] == []
 
-        mock_run.assert_awaited_once_with(user_id="test-user-id", message="")
+        mock_run.assert_awaited_once_with(
+            user_id="00000000-0000-0000-0000-000000000001", message=""
+        )
 
 
 def test_chat_internal_error_500(test_client, mock_current_user):
@@ -200,3 +202,66 @@ def test_chat_production_error_sanitization(test_client, mock_current_user, monk
         data = response.json()
         assert "secret password" not in data["error"]["message"]
         assert "An unexpected error occurred" in data["error"]["message"]
+
+
+def test_chat_request_body_user_id_override(test_client, mock_current_user):
+    """
+    Test that POST /api/v1/chat accepts an optional user_id in the request body.
+    When provided and matching the authenticated user, it is passed through to the agent.
+    """
+    mock_agent_result = {
+        "response": "Water damage from burst pipes is covered up to $25,000.",
+        "sources": ["sample_policy.md#Section 1"],
+        "tool_calls": [],
+    }
+
+    with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
+        mock_run.return_value = mock_agent_result
+
+        payload = {
+            "user_id": "00000000-0000-0000-0000-000000000001",
+            "message": "What is covered under water damage?",
+        }
+        response = test_client.post(
+            "/api/v1/chat",
+            json=payload,
+            headers=mock_current_user,
+        )
+
+        assert response.status_code == 200
+        mock_run.assert_awaited_once_with(
+            user_id="00000000-0000-0000-0000-000000000001",
+            message="What is covered under water damage?",
+        )
+
+
+def test_chat_request_body_user_id_mismatch_uses_auth_user(test_client, mock_current_user, caplog):
+    """
+    Test that when request body user_id differs from authenticated user,
+    the authenticated user is used and a warning is logged.
+    """
+    mock_agent_result = {
+        "response": "I can help with that.",
+        "sources": [],
+        "tool_calls": [],
+    }
+
+    with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
+        mock_run.return_value = mock_agent_result
+
+        payload = {
+            "user_id": "different-user-id",
+            "message": "Hello",
+        }
+        response = test_client.post(
+            "/api/v1/chat",
+            json=payload,
+            headers=mock_current_user,
+        )
+
+        assert response.status_code == 200
+        mock_run.assert_awaited_once_with(
+            user_id="00000000-0000-0000-0000-000000000001",
+            message="Hello",
+        )
+        assert "differs from authenticated user" in caplog.text

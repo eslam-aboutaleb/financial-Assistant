@@ -1,12 +1,32 @@
 # syntax=docker/dockerfile:1
+# ==============================================================================
+# OmniCare Financial Frontend - Development Dockerfile
+# ==============================================================================
+# Differences from production Dockerfile:
+#   - Single-stage build (no multi-stage complexity for faster iteration).
+#   - Installs all dependencies including devDependencies.
+#   - Runs `npm run dev` (Vite dev server) with hot module replacement (HMR).
+#   - Source code is mounted as a volume for live editing.
+#
+# Volume mounts (defined in docker-compose.dev.yml):
+#   - ./frontend:/app           - Mount source code for live editing.
+#   - /app/node_modules         - Anonymous volume to avoid host/node_modules conflicts.
+#   - /app/.next                - Anonymous volume to persist build cache.
+# ==============================================================================
+
 FROM node:20-alpine
 
-# libc6-compat is needed for alpine compatibility with certain native dependencies
+# libc6-compat is needed for Alpine compatibility with certain native dependencies
+# (e.g., sharp, esbuild). Without this, some npm packages may fail to install.
 RUN apk add --no-cache libc6-compat
+
 WORKDIR /app
 
+# Copy lock files and package.json for dependency caching.
 COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* bun.lockb* ./
 
+# Install dependencies using the appropriate package manager.
+# Unlike production, we install all dependencies including devDependencies.
 RUN \
   if [ -f yarn.lock ]; then yarn install; \
   elif [ -f package-lock.json ]; then npm install; \
@@ -14,10 +34,15 @@ RUN \
   else npm install; \
   fi
 
+# Copy the full source code.
 COPY . .
 
+# Set environment to development for Vite dev server behavior.
 ENV NODE_ENV=development
 
+# Expose the Vite dev server port.
 EXPOSE 3000
 
+# Run the Vite dev server with hot module replacement (HMR).
+# The dev server watches for file changes and hot-reloads the browser.
 CMD ["npm", "run", "dev"]

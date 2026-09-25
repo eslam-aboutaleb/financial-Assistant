@@ -15,6 +15,7 @@ Rate limit strategy:
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+
 def _user_or_ip_key_func(request):
     """Extract the client IP address or user ID from the incoming request.
 
@@ -33,7 +34,7 @@ def _user_or_ip_key_func(request):
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header.split(" ")[1]
-    
+
     # Check cookie fallback
     if not token:
         token = request.cookies.get("omnicare_access_token")
@@ -41,12 +42,14 @@ def _user_or_ip_key_func(request):
     if token:
         try:
             from app.auth import _decode_token
+
             user_id = _decode_token(token)
             return f"user:{str(user_id)}"
         except Exception:
             pass
 
     return f"ip:{get_remote_address(request)}"
+
 
 # Module-level limiter instance. Import this and apply ``@limiter.limit()``
 # decorators to FastAPI route handlers to enforce rate limits.

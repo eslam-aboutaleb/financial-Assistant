@@ -41,15 +41,16 @@ async def get_claim_status(claim_id: str, policy_number: str = "") -> dict[str, 
 
     try:
         async with async_session_factory() as session:
-            stmt = select(Claim).where(
-                Claim.claim_id == normalised_id,
-                Claim.owner_id == user_uuid
-            )
+            stmt = select(Claim).where(Claim.claim_id == normalised_id, Claim.owner_id == user_uuid)
             result = await session.execute(stmt)
             claim = result.scalar_one_or_none()
 
             if not claim:
-                logger.warning("IDOR attempt or claim not found: claim %s requested by user %s", normalised_id, user_uuid)
+                logger.warning(
+                    "IDOR attempt or claim not found: claim %s requested by user %s",
+                    normalised_id,
+                    user_uuid,
+                )
                 return {
                     "found": False,
                     "error": (
@@ -67,6 +68,10 @@ async def get_claim_status(claim_id: str, policy_number: str = "") -> dict[str, 
                 "claim_type": claim.claim_type,
                 "status": claim.status,
                 "amount": claim.amount,
+                "citation": (
+                    f"Claim {claim.claim_id} in the OmniCare claims system "
+                    f"(policy {claim.policy_number})."
+                ),
             }
     except Exception as exc:
         logger.exception("Database error during claim lookup: %s", exc)

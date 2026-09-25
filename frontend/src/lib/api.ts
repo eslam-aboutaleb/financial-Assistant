@@ -7,12 +7,12 @@
  * ``fetch`` directly to ensure consistent request handling.
  *
  * Environment:
- *   The backend URL is read from ``NEXT_PUBLIC_API_URL``. In development,
+ *   The backend URL is read from ``VITE_API_URL``. In development,
  *   this defaults to ``http://localhost:8000``. In production, set this to
  *   the deployed backend origin.
  */
 
-import { ChatResponse } from "@/types/chat";
+import { ChatResponse, ADKSSEEvent } from "@/types/chat";
 
 /**
  * Generate a cryptographically random idempotency key.
@@ -49,7 +49,7 @@ export async function sendMessage(
   token: string | null,
   message: string,
 ): Promise<ChatResponse> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const idempotencyKey = generateIdempotencyKey();
 
   const response = await fetch(`${apiUrl}/api/v1/chat`, {
@@ -91,7 +91,7 @@ export async function sendMessage(
  * @param token - The JWT access token for authentication.
  */
 export async function resetChat(token: string | null): Promise<void> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
   await fetch(`${apiUrl}/api/v1/chat/reset`, {
     method: "POST",
@@ -110,7 +110,7 @@ export async function resetChat(token: string | null): Promise<void> {
  * @throws Error if the request fails.
  */
 export async function getConversations(token: string) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const response = await fetch(`${apiUrl}/api/v1/chat/conversations`, {
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -127,7 +127,7 @@ export async function getConversations(token: string) {
  * @throws Error if the request fails.
  */
 export async function getConversationHistory(token: string, id: string) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const response = await fetch(`${apiUrl}/api/v1/chat/conversations/${id}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -138,9 +138,9 @@ export async function getConversationHistory(token: string, id: string) {
 export async function streamMessage(
   token: string | null,
   message: string,
-  onChunk: (eventData: any) => void
+  onChunk: (eventData: ADKSSEEvent) => void
 ): Promise<void> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const idempotencyKey = generateIdempotencyKey();
 
   const response = await fetch(`${apiUrl}/api/v1/chat/stream`, {
@@ -159,7 +159,9 @@ export async function streamMessage(
     try {
       const errorData = await response.json();
       errorMessage = errorData.detail || errorData.error?.message || errorMessage;
-    } catch {}
+    } catch {
+      // ignore JSON error
+    }
     throw new Error(errorMessage);
   }
 
@@ -168,9 +170,11 @@ export async function streamMessage(
 
   const decoder = new TextDecoder();
   let buffer = "";
+  let isDone = false;
 
-  while (true) {
+  while (!isDone) {
     const { done, value } = await reader.read();
+    isDone = done;
     if (done) break;
     
     buffer += decoder.decode(value, { stream: true });

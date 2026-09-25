@@ -1,9 +1,35 @@
+# ==============================================================================
+# OmniCare Financial - Development Docker Compose Configuration
+# ==============================================================================
+# Differences from production (docker-compose.yml):
+#   - Uses development Dockerfiles (Dockerfile.dev) with hot-reloading.
+#   - Mounts source code directories for live editing without rebuilds.
+#   - Uses hardcoded database credentials for local development convenience.
+#   - Anonymous volumes for node_modules and build caches to avoid conflicts.
+#
+# Hot Reloading:
+#   Backend: Uvicorn --reload watches app/ and restarts on changes.
+#   Frontend: Vite dev server (npm run dev) provides HMR via WebSocket.
+#
+# Volume Mounts:
+#   Backend:  ./backend/app:/app/app - Live code reloading.
+#   Frontend: ./frontend:/app         - Live code reloading.
+#             /app/node_modules        - Anonymous volume to avoid host/container conflicts.
+#             /app/.next               - Anonymous volume to persist Vite cache.
+# ==============================================================================
+
 services:
+  # ============================================================================
+  # Database Service
+  # ============================================================================
+  # Development database with hardcoded credentials for convenience.
+  # Data persists in the pg_data_dev volume across restarts.
   db:
     image: postgres:16-alpine
     container_name: omnicare-db-dev
     restart: unless-stopped
     environment:
+      # Hardcoded credentials for local development (not for production).
       POSTGRES_USER: omnicare
       POSTGRES_PASSWORD: omnicare_password
       POSTGRES_DB: omnicare
@@ -16,6 +42,11 @@ services:
       interval: 5s
       retries: 5
 
+  # ============================================================================
+  # Backend Service
+  # ============================================================================
+  # Development backend with hot-reloading enabled via Uvicorn --reload.
+  # Source code is mounted as a volume so changes take effect immediately.
   backend:
     build:
       context: ./backend
@@ -27,7 +58,10 @@ services:
     env_file:
       - .env
     volumes:
+      # Mount the app directory for live code reloading.
+      # Changes to Python files trigger automatic Uvicorn restart.
       - ./backend/app:/app/app
+      # Persist ChromaDB vector store data.
       - chroma_data_dev:/app/data/chroma_db
     depends_on:
       db:
@@ -39,6 +73,12 @@ services:
       retries: 5
       start_period: 15s
 
+  # ============================================================================
+  # Frontend Service
+  # ============================================================================
+  # Development frontend with Vite dev server and HMR.
+  # Source code is mounted for live editing; node_modules is isolated in an
+  # anonymous volume to prevent host/container dependency conflicts.
   frontend:
     build:
       context: ./frontend
@@ -48,14 +88,24 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - VITE_API_URL=http://localhost:8000
     volumes:
+      # Mount the full frontend directory for live code reloading.
       - ./frontend:/app
+      # Anonymous volume for node_modules to avoid conflicts between host
+      # and container node_modules (different OS/architecture).
       - /app/node_modules
+      # Anonymous volume for .next to persist Vite build cache and HMR state.
       - /app/.next
     depends_on:
       backend:
         condition: service_healthy
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+# Named volumes for persistent data in development.
+# Separate from production volumes to avoid data contamination.
 
 volumes:
   chroma_data_dev:

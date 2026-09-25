@@ -2,11 +2,15 @@
 FastAPI application entry point for OmniCare Financial Backend.
 
 Configures the app with dynamic settings, CORS from environment variables,
-lifespan events (RAG ingestion on startup), and mounts the v1 API router.
+lifespan events (database migrations and RAG ingestion on startup), and mounts
+the v1 API router.
 """
 
 import logging
+import subprocess
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -35,12 +39,44 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def _run_alembic_migrations() -> None:
+    """Apply pending Alembic migrations during application startup.
+
+    Runs ``alembic upgrade head`` in a subprocess so that the migration
+    environment can safely import application settings and models without
+    conflicting with the running Uvicorn event loop.
+    """
+    backend_dir = Path(__file__).resolve().parents[1]
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
+            cwd=backend_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        if result.returncode == 0:
+            logger.info("Database migrations applied successfully.")
+            if result.stdout.strip():
+                logger.debug("Alembic output: %s", result.stdout.strip())
+        else:
+            logger.error(
+                "Alembic migration failed with exit code %s: %s",
+                result.returncode,
+                result.stderr.strip(),
+            )
+    except Exception as e:
+        logger.error("Failed to run database migrations: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Application lifespan handler.
     On startup:
-      - Validates filesystem directories.
+      - Applies pending database migrations via Alembic.
+      - Configures LiteLLM environment variables.
       - Ingests the policy document into Chroma vector store (idempotent).
     On shutdown:
       - Gracefully terminates running sessions and resources.
@@ -52,13 +88,7 @@ async def lifespan(app: FastAPI):
         settings.app_version,
     )
 
-
-    from app.database import create_all_tables
-    try:
-        await create_all_tables()
-        logger.info("Database tables verified/created.")
-    except Exception as e:
-        logger.error(f"Failed to create database tables: {e}")
+    await _run_alembic_migrations()
 
     # Configure LiteLLM environment variables from centralized settings
     try:
@@ -79,6 +109,7 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"Shutting down {settings.app_name}...")
     from app.database import engine
+
     await engine.dispose()
 
 
@@ -144,6 +175,10 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Register SlowAPIMiddleware so @limiter.limit(...) decorators actually enforce limits.
 app.add_middleware(SlowAPIMiddleware)
 
+from app.middleware import RequestSizeLimitMiddleware
+
+app.add_middleware(RequestSizeLimitMiddleware, max_upload_size=5 * 1024 * 1024)
+
 # Mount API v1 router
 app.include_router(v1_router)
 
@@ -155,7 +190,7 @@ async def http_exception_handler(
 ) -> JSONResponse:
     """
     Convert all HTTPExceptions into a standardized ErrorResponse envelope.
-    
+
     This ensures 401, 403, 404, 422, 500, etc. all return the same
     {"error": {"code": "...", "message": "...", "details": ...}} shape.
     """

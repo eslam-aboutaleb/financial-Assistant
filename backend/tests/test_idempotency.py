@@ -140,7 +140,7 @@ class TestChatIdempotency:
 
         assert res.status_code == 200
         mock_run.assert_awaited_once_with(
-            user_id="test-user-id",
+            user_id="00000000-0000-0000-0000-000000000001",
             message="water damage",
         )
         assert res.headers.get("X-Idempotent-Replayed") != "true"
@@ -156,12 +156,8 @@ class TestChatIdempotency:
             payload = {"message": "water damage"}
 
             # Two identical requests without Idempotency-Key
-            res1 = test_client.post(
-                "/api/v1/chat", json=payload, headers=mock_current_user
-            )
-            res2 = test_client.post(
-                "/api/v1/chat", json=payload, headers=mock_current_user
-            )
+            res1 = test_client.post("/api/v1/chat", json=payload, headers=mock_current_user)
+            res2 = test_client.post("/api/v1/chat", json=payload, headers=mock_current_user)
 
         assert res1.status_code == 200
         assert res2.status_code == 200
@@ -185,12 +181,8 @@ class TestChatIdempotency:
             }
             payload = {"message": "water damage"}
 
-            res1 = test_client.post(
-                "/api/v1/chat", json=payload, headers=headers
-            )
-            res2 = test_client.post(
-                "/api/v1/chat", json=payload, headers=headers
-            )
+            res1 = test_client.post("/api/v1/chat", json=payload, headers=headers)
+            res2 = test_client.post("/api/v1/chat", json=payload, headers=headers)
 
         assert mock_run.await_count == 1
         assert res2.headers.get("X-Idempotent-Replayed") == "true"
@@ -221,44 +213,54 @@ class TestChatIdempotency:
 
     def test_errors_are_not_cached(self, test_client, mock_current_user):
         """A 500 response must NOT be cached -- client should retry and get a fresh attempt."""
-        with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
-            mock_run.side_effect = RuntimeError("Transient LLM error")
+        from app.main import app
 
-            payload = {"message": "crash now"}
-            test_client.post(
-                "/api/v1/chat",
-                json=payload,
-                headers={**mock_current_user, "Idempotency-Key": "fail-key"},
-            )
+        app.state.limiter.enabled = False
+        try:
+            with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
+                mock_run.side_effect = RuntimeError("Transient LLM error")
 
-        # After the failed attempt, clear the side effect so the retry succeeds
-        with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = _MOCK_RESPONSE
+                payload = {"message": "crash now"}
+                test_client.post(
+                    "/api/v1/chat",
+                    json=payload,
+                    headers={**mock_current_user, "Idempotency-Key": "fail-key"},
+                )
 
-            res = test_client.post(
-                "/api/v1/chat",
-                json=payload,
-                headers={**mock_current_user, "Idempotency-Key": "fail-key"},
-            )
+            # After the failed attempt, clear the side effect so the retry succeeds
+            with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
+                mock_run.return_value = _MOCK_RESPONSE
 
-        assert res.status_code == 200
-        # Agent was called again (not replayed from cache)
-        assert res.headers.get("X-Idempotent-Replayed") != "true"
-        mock_run.assert_awaited_once()
+                res = test_client.post(
+                    "/api/v1/chat",
+                    json=payload,
+                    headers={**mock_current_user, "Idempotency-Key": "fail-key"},
+                )
+
+            assert res.status_code == 200
+            # Agent was called again (not replayed from cache)
+            assert res.headers.get("X-Idempotent-Replayed") != "true"
+            mock_run.assert_awaited_once()
+        finally:
+            app.state.limiter.enabled = True
 
     def test_different_users_same_message_not_shared(self, test_client, mock_current_user):
         """Without explicit keys, two users with the same message are processed independently."""
         # Disable rate limiter for this test to avoid 429 blocking the second request
-        from app.main import app; app.state.limiter.enabled = False; 
+        from app.main import app
+
+        app.state.limiter.enabled = False
         with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = _MOCK_RESPONSE
 
             # First user
             headers1 = mock_current_user
             # Second user with a different user-id
-            headers2 = {"Authorization": "Bearer test-token-for-00000000-0000-0000-0000-000000000002"}
+            headers2 = {
+                "Authorization": "Bearer test-token-for-00000000-0000-0000-0000-000000000002"
+            }
 
-            res1 = test_client.post(
+            test_client.post(
                 "/api/v1/chat",
                 json={"message": "water damage"},
                 headers=headers1,

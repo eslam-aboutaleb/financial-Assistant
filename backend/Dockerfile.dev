@@ -1,28 +1,51 @@
 # syntax=docker/dockerfile:1
+# ==============================================================================
+# OmniCare Financial Backend - Development Dockerfile
+# ==============================================================================
+# Differences from production Dockerfile:
+#   - Creates a virtual environment at /opt/venv for editable installs.
+#   - Uses `uv pip install -e .` for live code reloading during development.
+#   - Does NOT remove pip (useful for debugging).
+#   - Uvicorn runs with --reload for automatic restart on code changes.
+#
+# Volume mounts (defined in docker-compose.dev.yml):
+#   - ./backend/app:/app/app  - Mount source code for live editing.
+# ==============================================================================
+
 FROM python:3.11-slim
 
+# Python runtime optimizations (same as production).
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# Install system dependencies required for building Python packages.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install UV package manager.
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
+# Set working directory.
 WORKDIR /app
 
+# Copy dependency manifests for caching.
 COPY pyproject.toml ./
 
+# Create a virtual environment and install dependencies in editable mode.
+# The venv ensures consistent dependency resolution across development machines.
 RUN uv venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN uv pip install -e .
 
+# Copy backend application source code.
 COPY app/ ./app/
 
+# Expose backend API port.
 EXPOSE 8000
 
-# Run Uvicorn with --reload for hot-reloading in development
+# Run Uvicorn with --reload for hot-reloading during development.
+# --reload watches for file changes and restarts the server automatically.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
