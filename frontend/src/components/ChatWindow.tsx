@@ -202,7 +202,7 @@ export default function ChatWindow({
             data-testid="empty-state"
           >
             <div className="mb-8">
-              <div className="w-[72px] h-[72px] rounded-2xl bg-insurance-surface border border-insurance-border flex items-center justifyight mx-auto">
+              <div className="w-[72px] h-[72px] rounded-2xl bg-insurance-surface border border-insurance-border flex items-center justify-center mx-auto">
                 <Shield className="w-8 h-8 text-insurance-info" />
               </div>
             </div>
