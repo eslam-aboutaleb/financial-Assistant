@@ -1,31 +1,170 @@
-import { Plus, Shield } from "lucide-react";
+/**
+ * Sidebar component.
+ *
+ * Provides the persistent navigation rail on the left side of the chat
+ * interface. Contains the app branding, a "New Chat" action, the user's
+ * conversation history list, and a logout button.
+ *
+ * Data flow:
+ *   - Conversation history is fetched via React Query using the
+ *     ``getConversations`` API call, keyed on ``refreshTrigger`` so the
+ *     parent can force a refetch after creating a new conversation.
+ *   - Selecting a conversation calls ``onSelectChat`` with the conversation
+ *     ID; the parent then switches the ChatWindow into read-only history mode.
+ *   - The sidebar is hidden on mobile by default and toggled via the
+ *     ``sidebarOpen`` state in the parent page component.
+ */
+
+import { Plus, Shield, LogOut, MessageSquare } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { getConversations } from "@/lib/api";
+import { ConversationMeta } from "@/types/chat";
+import { useAuth } from "@/context/AuthContext";
 
 interface SidebarProps {
+  /** Callback when the user clicks "New Chat". */
   onNewChat: () => void;
+  /** Optional callback when the user clicks logout. */
+  onLogout?: () => void;
+  /** Callback when a conversation is selected from history. */
+  onSelectChat?: (id: string) => void;
+  /** Incremented to trigger a refetch of conversation history. */
+  refreshTrigger?: number;
+  /** The currently active conversation ID, if any. */
+  activeConversationId?: string | null;
 }
 
-export default function Sidebar({ onNewChat }: SidebarProps) {
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+export default function Sidebar({
+  onNewChat,
+  onLogout,
+  onSelectChat,
+  refreshTrigger = 0,
+  activeConversationId,
+}: SidebarProps) {
+  const { token } = useAuth();
+
+  const { data } = useQuery({
+    queryKey: ["conversations", refreshTrigger],
+    queryFn: () => getConversations(token!),
+    enabled: !!token,
+  });
+
+  const chats: ConversationMeta[] = data?.conversations || [];
+
   return (
-    <div className="w-full h-full bg-gray-900 border-r border-gray-800 flex flex-col p-2 text-gray-200">
-      <div className="flex items-center gap-3 p-3 mb-4 mt-2">
-        <Shield className="w-8 h-8 text-indigo-500" />
-        <span className="font-semibold text-lg">OmniCare</span>
-      </div>
-
-      <button
-        onClick={onNewChat}
-        className="flex items-center gap-3 p-3 mx-2 rounded-md hover:bg-gray-800 border border-gray-700 transition-colors"
+    <div
+      id="sidebar"
+      className="w-full h-full bg-warm-surface flex flex-col text-warm-ink"
+      data-testid="sidebar"
+      aria-label="Navigation sidebar"
+    >
+      <div
+        id="sidebar-header"
+        className="p-5 pb-4"
+        data-testid="sidebar-header"
       >
-        <Plus className="w-4 h-4" />
-        New Chat
-      </button>
-
-      <div className="flex-1 overflow-y-auto mt-4 px-2">
-        {/* Chat history could go here */}
+        <div className="flex items-center gap-3">
+          <div
+            className="w-9 h-9 rounded-xl bg-ochre-600 text-white flex items-center justify-center shadow-soft"
+            aria-hidden="true"
+          >
+            <Shield className="w-5 h-5" />
+          </div>
+          <div className="leading-tight">
+            <div
+              id="sidebar-title"
+              className="font-semibold text-[15px] tracking-tight"
+              data-testid="sidebar-title"
+            >
+              OmniCare
+            </div>
+            <div className="text-xs text-warm-muted">Financial Assistant</div>
+          </div>
+        </div>
       </div>
 
-      <div className="p-4 border-t border-gray-800 text-sm text-gray-400">
-        Financial Assistant v1.0
+      <div className="px-3 pb-2">
+        <button
+          id="new-chat-button"
+          onClick={onNewChat}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-ochre-600 text-white text-sm font-medium hover:bg-ochre-700 active:scale-[0.98] transition-all duration-200 shadow-soft hover:shadow-medium"
+          data-testid="new-chat-button"
+          aria-label="Start a new chat"
+        >
+          <Plus className="w-4 h-4" />
+          <span data-testid="new-chat-label">New Chat</span>
+        </button>
+      </div>
+
+      <div
+        id="chat-history"
+        className="flex-1 overflow-y-auto px-3 py-2 space-y-0.5"
+        data-testid="chat-history"
+        aria-label="Chat history"
+      >
+        {chats.length === 0 && (
+          <div className="px-2 py-6 text-center text-xs text-warm-muted">
+            No conversations yet.
+          </div>
+        )}
+        {chats.map((chat) => {
+          const isActive = chat.id === activeConversationId;
+          return (
+            <button
+              key={chat.id}
+              onClick={() => onSelectChat && onSelectChat(chat.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm text-left rounded-xl transition-colors duration-200 group ${
+                isActive
+                  ? "bg-ochre-50 text-ochre-900 border border-ochre-200"
+                  : "hover:bg-sand-100 text-warm-ink/80 hover:text-warm-ink"
+              }`}
+            >
+              <MessageSquare
+                className={`w-4 h-4 flex-shrink-0 transition-colors ${isActive ? "text-ochre-600" : "text-warm-stone group-hover:text-ochre-600"}`}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="truncate">{chat.title}</div>
+                <div className="text-[11px] text-warm-muted truncate">
+                  {formatRelativeTime(chat.updated_at)}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {onLogout && (
+        <div className="p-3 pt-2">
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-red-700 hover:bg-red-50 text-sm font-medium transition-colors duration-200"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Logout</span>
+          </button>
+        </div>
+      )}
+
+      <div
+        id="sidebar-footer"
+        className="px-5 py-3 border-t border-warm-border text-[11px] text-warm-muted"
+        data-testid="sidebar-footer"
+      >
+        OmniCare Financial Assistant v1.0
       </div>
     </div>
   );

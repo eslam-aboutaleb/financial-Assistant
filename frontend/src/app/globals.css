@@ -4,22 +4,99 @@
 
 @layer base {
   body {
-    @apply bg-gray-950 text-gray-50;
+    @apply bg-sand-50 text-warm-ink antialiased;
+  }
+
+  :root {
+    --font-inter: "Inter", system-ui, sans-serif;
+  }
+
+  ::selection {
+    @apply bg-ochre-200 text-ochre-900;
   }
 }
 
-::-webkit-scrollbar {
-  width: 8px;
-}
+@layer components {
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
 
-::-webkit-scrollbar-track {
-  @apply bg-gray-900;
-}
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
 
-::-webkit-scrollbar-thumb {
-  @apply bg-gray-600 rounded-full;
-}
+  ::-webkit-scrollbar-thumb {
+    @apply bg-sand-300 rounded-full hover:bg-sand-400 transition-colors;
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-500;
+  /* Focus */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-ochre-500/30 ring-offset-2 ring-offset-sand-50 rounded-md;
+  }
+
+  /* Entrance */
+  .message-enter {
+    animation: slideUp 0.28s ease-out;
+  }
+
+  /* Transitions */
+  .transition-subtle {
+    transition: all 0.18s ease-out;
+  }
+
+  /* Prose typography tuning */
+  .prose {
+    @apply text-[15px] leading-relaxed text-warm-ink;
+  }
+  .prose p {
+    @apply my-2;
+  }
+  .prose pre {
+    @apply my-4;
+  }
+  .prose code {
+    @apply text-ochre-800 bg-ochre-50 px-1 py-0.5 rounded text-[13px] font-mono;
+  }
+  .prose pre code {
+    @apply bg-transparent p-0;
+  }
+  .prose h1,
+  .prose h2,
+  .prose h3,
+  .prose h4 {
+    @apply font-semibold text-warm-ink tracking-tight;
+  }
+  .prose h1 {
+    @apply text-xl;
+  }
+  .prose h2 {
+    @apply text-lg;
+  }
+  .prose h3 {
+    @apply text-base;
+  }
+  .prose ul,
+  .prose ol {
+    @apply pl-5;
+  }
+  .prose li {
+    @apply mb-1;
+  }
+  .prose blockquote {
+    @apply border-l-4 border-ochre-200 pl-4 italic text-warm-muted;
+  }
+  .prose a {
+    @apply text-ochre-700 underline underline-offset-2 hover:text-ochre-800;
+  }
+  .prose table {
+    @apply w-full border-collapse;
+  }
+  .prose th,
+  .prose td {
+    @apply border border-warm-border px-3 py-2 text-left;
+  }
+  .prose th {
+    @apply bg-sand-50 font-medium;
+  }
 }
