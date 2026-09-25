@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Core ADK Agent definition and runner for the OmniCare Assistant.
 
@@ -8,7 +6,11 @@ registers all tools, and provides the async run_agent() function
 for the FastAPI endpoints to call.
 """
 
+from __future__ import annotations
+
 import logging
+from collections.abc import AsyncGenerator
+from google.adk.agents.run_config import RunConfig, StreamingMode
 import os
 import uuid
 from typing import Any
@@ -243,9 +245,6 @@ def reset_user_session(user_id: str) -> None:
     _user_sessions.pop(user_id, None)
 
 
-from typing import AsyncGenerator
-import json
-from google.adk.agents.run_config import RunConfig, StreamingMode
 
 async def run_agent_stream(user_id: str, message: str) -> AsyncGenerator[str, None]:
     session_id = await _ensure_session(user_id)
