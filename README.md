@@ -225,7 +225,7 @@ OmniCare Financial includes automated tests with Pytest covering RAG ingestion, 
 cd backend
 
 # Install dependencies (if not using Docker)
-pip install -r requirements.txt
+uv pip install -e .
 
 # Run all tests
 python -m pytest tests/ -v

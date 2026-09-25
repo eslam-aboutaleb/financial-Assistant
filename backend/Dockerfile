@@ -4,30 +4,34 @@ FROM python:3.11-slim
 # Set environment variables for Python runtime optimization
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    UV_NO_CACHE=1 \
+    UV_PYTHON_PREFER_SYSTEM=1
 
 # Install system dependencies
-# - build-essential: required for sentence-transformers C/C++ extensions
-# - curl: required for container healthcheck against /api/v1/health
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install UV package manager
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
 WORKDIR /app
 
-# Copy requirements specification and install Python dependencies
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+# Copy dependency manifests and install Python dependencies via UV
+COPY pyproject.toml ./
+
+# Install dependencies FIRST so they are cached if app/ code changes
+RUN uv pip install --system .
+# Ensure pip is entirely removed
+RUN rm -rf /usr/local/bin/pip* /usr/local/lib/python*/site-packages/pip*
 
 # Copy backend application source code
 COPY app/ ./app/
 
-# Run the RAG ingestion script to pre-populate Chroma vector database at build time
-RUN python -m app.rag.ingest
-
 # Expose backend API port
+
 EXPOSE 8000
 
 # Start FastAPI application using Uvicorn server

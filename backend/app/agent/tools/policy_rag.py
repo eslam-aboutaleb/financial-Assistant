@@ -3,13 +3,13 @@ from __future__ import annotations
 """
 Policy RAG tool for the OmniCare agent.
 
-Queries the Chroma vector store with distance thresholding and returns
-grounded policy context with section citations for the LLM to answer from.
+Queries ChromaDB (vector search) first, then falls back to Postgres BM25
+full-text search when no semantically relevant chunks are found.
 """
 
 from typing import Any
 
-from app.rag.retriever import retrieve
+from app.rag.retriever import retrieve_hybrid
 
 # Distance threshold calibrated for all-MiniLM-L6-v2 on insurance text.
 # Queries with no relevant policy match return an empty context rather than
@@ -17,8 +17,11 @@ from app.rag.retriever import retrieve
 _DISTANCE_THRESHOLD = 1.3
 
 
-def query_policy(query: str) -> dict[str, Any]:
+async def query_policy(query: str) -> dict[str, Any]:
     """Searches OmniCare insurance policy documents to answer coverage questions.
+
+    Uses hybrid retrieval: ChromaDB vector similarity search first, then
+    Postgres BM25 keyword fallback if vector search returns no results.
 
     Use this tool whenever the user asks about:
     - What is or is not covered under a policy
@@ -44,7 +47,11 @@ def query_policy(query: str) -> dict[str, Any]:
               ``relevance_score`` (float, lower is more relevant).
             - ``chunks_found`` (int): Number of relevant chunks retrieved.
     """
-    results = retrieve(query=query, n_results=5, distance_threshold=_DISTANCE_THRESHOLD)
+    results = await retrieve_hybrid(
+        query=query,
+        n_results=5,
+        distance_threshold=_DISTANCE_THRESHOLD,
+    )
 
     if not results:
         return {

@@ -187,6 +187,7 @@ async def reset_chat(
 )
 async def list_conversations(
     current_user_id: str = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
 ) -> ConversationListResponse:
     """List all conversations for the authenticated user.
 
@@ -194,11 +195,9 @@ async def list_conversations(
         ConversationListResponse: A list of conversation metadata objects
         including id, title, and timestamps, ordered by most recently updated.
     """
-    from app.database import async_session_factory
-    async with async_session_factory() as session:
-        stmt = select(Conversation).where(Conversation.user_id == uuid.UUID(current_user_id)).order_by(desc(Conversation.updated_at))
-        result = await session.execute(stmt)
-        conversations = result.scalars().all()
+    stmt = select(Conversation).where(Conversation.user_id == uuid.UUID(current_user_id)).order_by(desc(Conversation.updated_at))
+    result = await session.execute(stmt)
+    conversations = result.scalars().all()
 
     return ConversationListResponse(
         conversations=[
@@ -222,6 +221,7 @@ async def list_conversations(
 async def get_conversation(
     conversation_id: str,
     current_user_id: str = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
 ) -> ConversationDetailResponse:
     """Retrieve the full history of a single conversation.
 
@@ -244,13 +244,11 @@ async def get_conversation(
     except ValueError as err:
         raise HTTPException(status_code=400, detail="Invalid conversation ID") from err
 
-    from app.database import async_session_factory
-    async with async_session_factory() as session:
-        conv = (await session.execute(
-            select(Conversation)
-            .where(Conversation.id == conv_uuid)
-            .where(Conversation.user_id == uuid.UUID(current_user_id))
-        )).scalar_one_or_none()
+    conv = (await session.execute(
+        select(Conversation)
+        .where(Conversation.id == conv_uuid)
+        .where(Conversation.user_id == uuid.UUID(current_user_id))
+    )).scalar_one_or_none()
 
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")

@@ -42,7 +42,6 @@ graph TD
 
     subgraph Storage_Layer["Datastores & External Services"]
         ChromaStore[("ChromaDB Vector Store<br/>OpenAI Embedding API")]
-        ClaimsDB[("Claims Store<br/>mock_claims.json")]
         PolicyDoc[("Source Policy<br/>sample_policy.md")]
         LLMProvider[("LLM Provider<br/>OpenAI / Anthropic / Gemini")]
     end
@@ -255,7 +254,6 @@ Configuration is strictly centralized in [`app/config.py`](file:///Users/eslamab
 | `CHROMA_DB_PATH`         | `str`       | `./app/data/chroma_db`           | Valid directory path                                   | Storage location for persistent vector database.              |
 | `CHROMA_COLLECTION_NAME` | `str`       | `omnicare_policies`              | Alphanumeric string                                    | ChromaDB collection identifier.                               |
 | `EMBEDDING_MODEL`        | `str`       | `text-embedding-3-small`          | Pretrained model identifier                            | OpenAI embedding model name used by ChromaDB.                 |
-| `CLAIMS_FILE_PATH`       | `str`       | `./app/data/mock_claims.json`    | Valid file path                                        | Mock claims JSON storage path.                                |
 | `POLICY_FILE_PATH`       | `str`       | `./app/data/sample_policy.md`    | Valid file path                                        | Source policy document for RAG ingestion.                     |
 
 FastAPI endpoints consume settings through `Depends(get_settings)`:
@@ -294,14 +292,14 @@ This enables seamless mock injection during unit and integration testing without
 2. **Create and Activate a Virtual Environment**:
 
    ```bash
-   python3 -m venv .venv
+   uv venv .venv
    source .venv/bin/activate
    ```
 
 3. **Install Dependencies**:
 
    ```bash
-   pip install -r requirements.txt
+   uv pip install -e .
    ```
 
 4. **Configure Environment Variables**:
@@ -349,7 +347,6 @@ pytest tests/test_claim_status.py -v
 #### Test Architecture & Isolation
 
 - **Mock LLM Execution**: `test_chat.py` mocks `run_agent` to ensure tests execute offline, deterministically, and with zero external API costs.
-- **Isolated Datastores**: `conftest.py` provides the `sample_claims_path` fixture which copies `mock_claims.json` into temporary directories per test, preventing cross-test data pollution.
 - **In-Memory Chroma Fixture**: Retrieval tests utilize an isolated, temporary Chroma persistent directory.
 
 ---

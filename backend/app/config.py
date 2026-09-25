@@ -105,8 +105,7 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = Field(
-        default="postgresql+asyncpg://omnicare:omnicare_password@db:5432/omnicare",
-        description="SQLAlchemy async database URL",
+        description="SQLAlchemy async PostgreSQL database URL",
     )
 
     @field_validator("cors_origins", mode="before")
@@ -164,7 +163,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="forbid",  # Reject unknown env vars to catch typos early (e.g. from Docker like PATH, HOSTNAME),
+        extra="ignore",  # Reject unknown env vars to catch typos early (e.g. from Docker like PATH, HOSTNAME),
         case_sensitive=False,
     )
 

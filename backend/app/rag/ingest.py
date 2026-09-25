@@ -5,14 +5,16 @@ RAG ingestion pipeline for OmniCare policy documents.
 
 Reads policy markdown files, splits them into semantically coherent
 overlapping chunks, and stores embeddings in a persistent Chroma vector DB.
+Also writes chunks to Postgres with a tsvector column for BM25 fallback search.
 
 Best practices applied:
-- Sliding-window chunking with configurable overlap to respect embedding
-  model context windows (all-MiniLM-L6-v2 max 256 tokens).
-- Section title prepended to every sub-chunk for semantic context
-  preservation across chunk boundaries.
-- Idempotent: skips re-ingestion when the collection is already populated.
-- Structured logging instead of print() for production log pipelines.
+ - Sliding-window chunking with configurable overlap to respect embedding
+   model context windows (all-MiniLM-L6-v2 max 256 tokens).
+ - Section title prepended to every sub-chunk for semantic context
+   preservation across chunk boundaries.
+ - Idempotent: skips re-ingestion when the collection is already populated.
+ - Structured logging instead of print() for production log pipelines.
+ - Dual-write to ChromaDB (vector) and Postgres (BM25 keyword fallback).
 
 Can be run standalone: python -m app.rag.ingest
 """
@@ -23,9 +25,14 @@ from pathlib import Path
 from typing import Any
 
 import chromadb
+from app.rag.embedding import EmbeddingFactory
 from chromadb.utils import embedding_functions
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.database import async_session_factory
+from app.models.policy_chunk import PolicyChunk
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +150,44 @@ def chunk_policy_document(filepath: str) -> list[dict[str, Any]]:
     return chunks
 
 
+async def _write_chunks_to_postgres(chunks: list[dict[str, Any]]) -> None:
+    """
+    Write policy chunks to Postgres with a tsvector column for BM25 search.
+
+    Uses INSERT ... ON CONFLICT DO NOTHING for idempotency.
+    """
+    if not chunks:
+        return
+
+    try:
+        async with async_session_factory() as session:
+            for chunk in chunks:
+                stmt = text("""
+                    INSERT INTO policy_chunks
+                        (id, chunk_id, text, section, source, chunk_index, sub_chunk_index, tsvector)
+                    VALUES
+                        (:id, :chunk_id, :text, :section, :source, :chunk_index, :sub_chunk_index,
+                         to_tsvector('english', :text))
+                    ON CONFLICT (chunk_id) DO NOTHING
+                """)
+                await session.execute(
+                    stmt,
+                    {
+                        "id": chunk["id"],
+                        "chunk_id": chunk["id"],
+                        "text": chunk["text"],
+                        "section": chunk["metadata"]["section"],
+                        "source": chunk["metadata"]["source"],
+                        "chunk_index": chunk["metadata"]["chunk_index"],
+                        "sub_chunk_index": chunk["metadata"]["sub_chunk_index"],
+                    },
+                )
+            await session.commit()
+        logger.info("Wrote %d policy chunks to Postgres for BM25 fallback.", len(chunks))
+    except Exception as exc:
+        logger.warning("Could not write policy chunks to Postgres (BM25 fallback unavailable): %s", exc)
+
+
 def ingest_policy(
     policy_path: str | None = None,
     chroma_path: str | None = None,
@@ -150,7 +195,7 @@ def ingest_policy(
     embedding_model: str | None = None,
 ) -> int:
     """
-    Ingest policy documents into the Chroma vector store.
+    Ingest policy documents into the Chroma vector store and Postgres BM25 index.
 
     This function is idempotent: if the target collection already contains
     documents it returns the existing count without re-ingesting. Delete the
@@ -160,7 +205,7 @@ def ingest_policy(
         policy_path: Path to the policy markdown file.
         chroma_path: Filesystem directory for Chroma storage.
         collection_name: Chroma collection name.
-        embedding_model: Sentence-transformer model name.
+        embedding_model: Sentence-transformer model identifier.
 
     Returns:
         Number of chunks currently stored in the collection after this call.
@@ -172,7 +217,7 @@ def ingest_policy(
 
     client = chromadb.PersistentClient(path=chroma_path)
 
-    embed_fn = embedding_functions.OpenAIEmbeddingFunction(api_key=settings.openai_api_key, model_name=embedding_model)  # noqa: E501
+    embed_fn = EmbeddingFactory.get_embedding_function()  # noqa: E501
 
     collection = client.get_or_create_collection(
         name=collection_name,
@@ -201,6 +246,24 @@ def ingest_policy(
         metadatas=[c["metadata"] for c in chunks],
     )
 
+    # Also write to Postgres for BM25 fallback search.
+    # At Docker build time Postgres is not available, so we fire-and-forget.
+    try:
+        import asyncio
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # In a running event loop (e.g. lifespan), schedule as a task
+            loop.create_task(_write_chunks_to_postgres(chunks))
+        else:
+            loop.run_until_complete(_write_chunks_to_postgres(chunks))
+    except RuntimeError:
+        # No event loop (e.g. synchronous build-time invocation)
+        try:
+            import asyncio
+            asyncio.run(_write_chunks_to_postgres(chunks))
+        except Exception as exc:
+            logger.warning("Could not write policy chunks to Postgres during ingestion: %s", exc)
+
     logger.info(
         "Ingested %d chunks into collection '%s'.",
         len(chunks),
@@ -215,7 +278,7 @@ def ingest_policy(
 if __name__ == "__main__":
     import logging as _logging
 
-    _logging.basicConfig(level=_logging.INFO, format="%(levelname)s %(message)s")
+    _logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     logger.info("Starting OmniCare policy document ingestion...")
     count = ingest_policy()
     logger.info("Ingestion complete. %d chunks stored.", count)

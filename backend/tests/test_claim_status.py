@@ -40,4 +40,4 @@ async def test_get_claim_status_not_found():
         result = await get_claim_status(claim_id="CLM-9999")
         
         assert result["found"] is False
-        assert "not found" in result["error"].lower()
+        assert "no claim found" in result["error"].lower()

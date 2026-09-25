@@ -1,4 +1,21 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: omnicare-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-omnicare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: omnicare
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U omnicare"]
+      interval: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -11,6 +28,9 @@ services:
       - .env
     volumes:
       - chroma_data:/app/app/data/chroma_db
+    depends_on:
+      db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\" || exit 1"]
       interval: 10s
@@ -37,4 +57,7 @@ services:
 volumes:
   chroma_data:
     name: omnicare_chroma_data
+    driver: local
+  pg_data:
+    name: omnicare_pg_data
     driver: local

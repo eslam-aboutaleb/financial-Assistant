@@ -173,8 +173,8 @@ def test_chat_internal_error_500(test_client, mock_current_user):
 
         assert response.status_code == 500
         data = response.json()
-        assert "detail" in data
-        assert "Simulated internal LLM service crash" in data["detail"]
+        assert "error" in data
+        assert "An unexpected error occurred" in data["error"]["message"]
 
 
 def test_chat_production_error_sanitization(test_client, mock_current_user, monkeypatch):
@@ -198,5 +198,5 @@ def test_chat_production_error_sanitization(test_client, mock_current_user, monk
 
         assert response.status_code == 500
         data = response.json()
-        assert "secret password" not in data["detail"]
-        assert "An unexpected error occurred" in data["detail"]
+        assert "secret password" not in data["error"]["message"]
+        assert "An unexpected error occurred" in data["error"]["message"]

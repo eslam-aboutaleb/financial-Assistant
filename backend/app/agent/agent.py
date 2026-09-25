@@ -12,6 +12,11 @@ import logging
 import os
 import uuid
 from typing import Any
+from app.database import async_session_factory
+from app.models.conversation import Conversation
+from sqlalchemy import select
+from sqlalchemy.orm.attributes import flag_modified
+from datetime import datetime, timezone
 
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
@@ -199,6 +204,33 @@ async def run_agent(user_id: str, message: str) -> dict[str, Any]:
         else "I'm sorry, I couldn't generate a response. Please try again."
     )
 
+    # Save to database continuously for absolute data durability
+    try:
+        async with async_session_factory() as db_session:
+            conv = (await db_session.execute(select(Conversation).where(Conversation.session_id == session_id))).scalar_one_or_none()
+            
+            new_msgs = [
+                {"id": str(uuid.uuid4()), "role": "user", "content": message, "timestamp": datetime.now(timezone.utc).isoformat()},
+                {"id": str(uuid.uuid4()), "role": "assistant", "content": response_text, "timestamp": datetime.now(timezone.utc).isoformat()}
+            ]
+            
+            if conv is None:
+                title = message[:40] + ("..." if len(message) > 40 else "")
+                conv = Conversation(
+                    user_id=uuid.UUID(user_id),
+                    session_id=session_id,
+                    title=title,
+                    messages=new_msgs
+                )
+                db_session.add(conv)
+            else:
+                conv.messages.extend(new_msgs)
+                flag_modified(conv, "messages")
+                
+            await db_session.commit()
+    except Exception as e:
+        logger.error(f"Failed to auto-save conversation to DB: {e}", exc_info=True)
+
     return {
         "response": response_text,
         "sources": sources,
@@ -209,3 +241,73 @@ async def run_agent(user_id: str, message: str) -> dict[str, Any]:
 def reset_user_session(user_id: str) -> None:
     """Clear the session for a user (e.g., for 'New Chat')."""
     _user_sessions.pop(user_id, None)
+
+
+from typing import AsyncGenerator
+import json
+from google.adk.agents.run_config import RunConfig, StreamingMode
+
+async def run_agent_stream(user_id: str, message: str) -> AsyncGenerator[str, None]:
+    session_id = await _ensure_session(user_id)
+
+    # SECURE: Bind the authenticated user_id to the async context so tools can access it safely
+    import uuid
+    current_user_id.set(uuid.UUID(user_id))
+
+    # Wrap user message in ADK Content format
+    user_content = types.Content(
+        role="user",
+        parts=[types.Part(text=message)],
+    )
+
+    # We collect the full response to save to the DB at the end
+    final_text_parts: list[str] = []
+    
+    async for event in runner.run_async(
+        user_id=user_id,
+        session_id=session_id,
+        new_message=user_content,
+        run_config=RunConfig(streaming_mode=StreamingMode.SSE),
+    ):
+        if event.is_final_response() and event.content and event.content.parts:
+            for part in event.content.parts:
+                if hasattr(part, "text") and part.text:
+                    final_text_parts.append(part.text)
+        
+        # Yield ADK's built-in formatted SSE JSON string
+        sse_event = event.model_dump_json(exclude_none=True, by_alias=True)
+        yield f"data: {sse_event}\n\n"
+        
+    response_text = "\n".join(final_text_parts) if final_text_parts else "I'm sorry, I couldn't generate a response."
+    
+    # Save to database
+    try:
+        from app.database import async_session_factory
+        from app.models.conversation import Conversation
+        from sqlalchemy.orm.attributes import flag_modified
+        from sqlalchemy import select
+        from datetime import datetime, timezone
+        
+        async with async_session_factory() as db_session:
+            conv = (await db_session.execute(select(Conversation).where(Conversation.session_id == session_id))).scalar_one_or_none()
+            new_msgs = [
+                {"id": str(uuid.uuid4()), "role": "user", "content": message, "timestamp": datetime.now(timezone.utc).isoformat()},
+                {"id": str(uuid.uuid4()), "role": "assistant", "content": response_text, "timestamp": datetime.now(timezone.utc).isoformat()}
+            ]
+            
+            if conv is None:
+                title = message[:40] + ("..." if len(message) > 40 else "")
+                conv = Conversation(
+                    user_id=uuid.UUID(user_id),
+                    session_id=session_id,
+                    title=title,
+                    messages=new_msgs
+                )
+                db_session.add(conv)
+            else:
+                conv.messages.extend(new_msgs)
+                flag_modified(conv, "messages")
+                
+            await db_session.commit()
+    except Exception as e:
+        logger.error(f"Failed to auto-save conversation to DB: {e}", exc_info=True)

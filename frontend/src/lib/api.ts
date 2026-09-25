@@ -1,6 +1,29 @@
-import { ChatResponse } from "../types/chat";
+/**
+ * API client functions for communicating with the OmniCare FastAPI backend.
+ *
+ * This module centralizes all HTTP requests to the backend, including
+ * authentication header injection, idempotency key generation, and error
+ * normalization. Components should import from here rather than calling
+ * ``fetch`` directly to ensure consistent request handling.
+ *
+ * Environment:
+ *   The backend URL is read from ``NEXT_PUBLIC_API_URL``. In development,
+ *   this defaults to ``http://localhost:8000``. In production, set this to
+ *   the deployed backend origin.
+ */
 
-// ── Idempotency key generation ──────────────────────────────────────────────
+import { ChatResponse } from "@/types/chat";
+
+/**
+ * Generate a cryptographically random idempotency key.
+ *
+ * Uses ``crypto.randomUUID`` when available (modern browsers and Node 19+),
+ * falling back to a timestamp + random string for older environments.
+ *
+ * The key is sent as the ``Idempotency-Key`` header on chat requests so
+ * that the backend can deduplicate retries without affecting legitimate
+ * repeated requests (we do NOT key on user_id + message).
+ */
 function generateIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -8,28 +31,19 @@ function generateIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
-// ── Retry configuration ─────────────────────────────────────────────────────
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1_000;
-const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
-
-function isRetryableError(status: number): boolean {
-  return RETRYABLE_STATUS_CODES.has(status);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ── Main API function ────────────────────────────────────────────────────────
-
 /**
- * Send a chat message to the OmniCare backend with automatic idempotent retry.
+ * Send a chat message to the OmniCare backend.
  *
- * On network errors or transient server errors (5xx, 429, 408) the request is
- * retried up to MAX_RETRIES times using exponential backoff. The same
- * Idempotency-Key is sent on every attempt so the server deduplicates them --
- * the LLM agent runs exactly once even if the client retries multiple times.
+ * Automatically generates an idempotency key for safe retries. The backend
+ * caches the response for this key, so network retries (handled by React
+ * Query) will not trigger duplicate LLM calls.
+ *
+ * @param token - The JWT access token for authentication, or null for
+ *   unauthenticated requests (currently all chat requests require auth).
+ * @param message - The user's chat message text.
+ * @returns The structured chat response from the backend.
+ * @throws Error if the backend returns a non-ok response, with the error
+ *   message extracted from the response body when available.
  */
 export async function sendMessage(
   token: string | null,
@@ -38,74 +52,43 @@ export async function sendMessage(
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
   const idempotencyKey = generateIdempotencyKey();
 
-  let lastError: Error | null = null;
+  const response = await fetch(`${apiUrl}/api/v1/chat`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ message }),
+  });
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
-      const delay = RETRY_DELAY_MS * Math.pow(2, attempt - 1);
-      await sleep(delay);
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(`${apiUrl}/api/v1/chat`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "Idempotency-Key": idempotencyKey,
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ message }),
-      });
-    } catch (err) {
-      // Network-level error (fetch threw)
-      if (attempt === MAX_RETRIES) {
-        throw err instanceof Error ? err : new Error(String(err));
-      }
-      lastError = err instanceof Error ? err : new Error(String(err));
-      console.warn(
-        `[api] Attempt ${attempt + 1}/${MAX_RETRIES + 1} failed (network error). Retrying...`,
-      );
-      continue;
-    }
-
-    if (response.ok) {
-      return response.json();
-    }
-
-    // Parse error response for a user-friendly message
-    let errorMessage = "Failed to send message. Please try again.";
-    try {
-      const errorData = await response.json();
-      if (errorData.error?.message) {
-        errorMessage = errorData.error.message;
-      } else if (errorData.detail) {
-        errorMessage = errorData.detail;
-      }
-    } catch {
-      // Body was not JSON -- use generic message
-    }
-
-    if (!isRetryableError(response.status) || attempt === MAX_RETRIES) {
-      throw new Error(errorMessage);
-    }
-
-    lastError = new Error(errorMessage);
-    console.warn(
-      `[api] Attempt ${attempt + 1}/${MAX_RETRIES + 1} failed (HTTP ${response.status}). Retrying...`,
-    );
+  if (response.ok) {
+    return response.json();
   }
 
-  throw (
-    lastError ?? new Error("Failed to send message after multiple retries.")
-  );
+  let errorMessage = "Failed to send message. Please try again.";
+  try {
+    const errorData = await response.json();
+    if (errorData.error?.message) {
+      errorMessage = errorData.error.message;
+    } else if (errorData.detail) {
+      errorMessage = errorData.detail;
+    }
+  } catch {
+    // Body was not JSON
+  }
+
+  throw new Error(errorMessage);
 }
 
 /**
- * Reset the authenticated user's conversation session on the backend.
- * This clears the agent's in-memory conversation history so the next
- * message starts with a fresh context.
+ * Reset the current user's chat session on the backend.
+ *
+ * Clears the ADK InMemorySessionService so the next message starts a fresh
+ * conversation context. Does not delete conversation history from Postgres.
+ *
+ * @param token - The JWT access token for authentication.
  */
 export async function resetChat(token: string | null): Promise<void> {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -117,4 +100,96 @@ export async function resetChat(token: string | null): Promise<void> {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+}
+
+/**
+ * Fetch the list of past conversations for the authenticated user.
+ *
+ * @param token - The JWT access token for authentication.
+ * @returns The conversation list response from the backend.
+ * @throws Error if the request fails.
+ */
+export async function getConversations(token: string) {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const response = await fetch(`${apiUrl}/api/v1/chat/conversations`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error("Failed to load conversations");
+  return response.json();
+}
+
+/**
+ * Fetch the full message history for a specific conversation.
+ *
+ * @param token - The JWT access token for authentication.
+ * @param id - The UUID of the conversation to retrieve.
+ * @returns The conversation detail response including all messages.
+ * @throws Error if the request fails.
+ */
+export async function getConversationHistory(token: string, id: string) {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const response = await fetch(`${apiUrl}/api/v1/chat/conversations/${id}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error("Failed to load conversation history");
+  return response.json();
+}
+
+export async function streamMessage(
+  token: string | null,
+  message: string,
+  onChunk: (eventData: any) => void
+): Promise<void> {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const idempotencyKey = generateIdempotencyKey();
+
+  const response = await fetch(`${apiUrl}/api/v1/chat/stream`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ message }),
+  });
+
+  if (!response.ok) {
+    let errorMessage = "Failed to send message.";
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.detail || errorData.error?.message || errorMessage;
+    } catch {}
+    throw new Error(errorMessage);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No readable stream available");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    buffer += decoder.decode(value, { stream: true });
+    
+    let boundary = buffer.indexOf("\n\n");
+    while (boundary !== -1) {
+      const chunk = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      
+      if (chunk.startsWith("data: ")) {
+        try {
+          const data = JSON.parse(chunk.slice(6));
+          onChunk(data);
+        } catch (e) {
+          console.error("Error parsing SSE chunk:", e);
+        }
+      }
+      
+      boundary = buffer.indexOf("\n\n");
+    }
+  }
 }

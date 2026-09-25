@@ -1,23 +1,28 @@
 from __future__ import annotations
 
 """
-Chroma vector store retrieval module for OmniCare policy documents.
+Hybrid retrieval module for OmniCare policy documents.
 
-Best practices applied:
-- Module-level singleton client and collection to avoid reloading the
-  embedding model (SentenceTransformer) on every request (~200ms overhead).
-- Distance thresholding to discard semantically irrelevant chunks before
-  they can induce LLM hallucinations.
-- Graceful empty-collection handling.
+Retrieval strategy:
+1. Primary: ChromaDB vector similarity search using OpenAI embeddings.
+2. Fallback: Postgres BM25 full-text search via tsvector/tsquery when
+   vector search returns no results above the distance threshold.
+
+The BM25 fallback ensures exact keyword matches (deductibles, exclusions,
+policy limits) are surfaced even when semantic similarity is weak.
 """
 
 import logging
 from typing import Any
 
 import chromadb
-from chromadb.utils import embedding_functions
+from app.rag.embedding import EmbeddingFactory
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.database import async_session_factory
+from app.models.policy_chunk import PolicyChunk
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +61,9 @@ def get_collection(
             embedding_model,
         )
         client = chromadb.PersistentClient(path=chroma_path)
-        embed_fn = embedding_functions.OpenAIEmbeddingFunction(
-            api_key=settings.openai_api_key, model_name=embedding_model
+        from app.rag.embedding import EmbeddingFactory
+        embed_fn = EmbeddingFactory.get_embedding_function(
+
         )
         _collection_cache[cache_key] = client.get_or_create_collection(
             name=collection_name,
@@ -65,6 +71,55 @@ def get_collection(
         )
 
     return _collection_cache[cache_key]
+
+
+async def _bm25_fallback(query: str, n_results: int = 5) -> list[dict[str, Any]]:
+    """
+    BM25 keyword search over Postgres policy_chunks tsvector column.
+
+    Used as a fallback when vector search returns no results above the
+    distance threshold. This catches exact keyword matches that semantic
+    search might miss (e.g., specific deductible amounts, exclusion terms).
+
+    Args:
+        query: Natural-language search query.
+        n_results: Maximum results to return.
+
+    Returns:
+        List of dicts with keys: document, metadata, distance (always 0.0
+        since BM25 relevance is not a distance metric).
+    """
+    try:
+        async with async_session_factory() as session:
+            stmt = text("""
+                SELECT text, section, source, chunk_index, sub_chunk_index,
+                       ts_rank(tsvector, plainto_tsquery('english', :query)) AS rank
+                FROM policy_chunks
+                WHERE tsvector @@ plainto_tsquery('english', :query)
+                ORDER BY rank DESC
+                LIMIT :limit
+            """)
+            result = await session.execute(stmt, {"query": query, "limit": n_results})
+            rows = result.mappings().all()
+
+        retrieved: list[dict[str, Any]] = []
+        for row in rows:
+            retrieved.append({
+                "document": row["text"],
+                "metadata": {
+                    "section": row["section"],
+                    "source": row["source"],
+                    "chunk_index": row["chunk_index"],
+                    "sub_chunk_index": row["sub_chunk_index"],
+                },
+                "distance": 0.0,
+                "_rank": float(row["rank"]),
+                "_source": "bm25",
+            })
+        return retrieved
+    except Exception as exc:
+        logger.warning("BM25 fallback search failed: %s", exc)
+        return []
 
 
 def retrieve(  # noqa: PLR0913, PLR0917
@@ -79,7 +134,9 @@ def retrieve(  # noqa: PLR0913, PLR0917
     Query the Chroma vector store for semantically relevant policy chunks.
 
     Results are filtered by a distance threshold to prevent irrelevant chunks
-    from reaching the LLM context window and causing hallucinations.
+    from reaching the LLM context window and causing hallucinations. If no
+    chunks pass the threshold, a BM25 keyword fallback over the Postgres
+    tsvector index is attempted.
 
     Args:
         query: The natural-language search query.
@@ -90,7 +147,7 @@ def retrieve(  # noqa: PLR0913, PLR0917
         embedding_model: Optional override for embedding model name.
 
     Returns:
-        List of dicts (sorted by distance, ascending) with keys:
+        List of dicts (sorted by relevance) with keys:
             - document (str): Chunk text.
             - metadata (dict): Section, source, and chunk index fields.
             - distance (float): L2 distance from the query embedding.
@@ -99,7 +156,8 @@ def retrieve(  # noqa: PLR0913, PLR0917
 
     available = collection.count()
     if available == 0:
-        logger.warning("Chroma collection is empty - RAG will return no results.")
+        logger.warning("Chroma collection is empty - attempting BM25-only retrieval.")
+        # Async fallback cannot be awaited here; return empty and let caller handle it
         return []
 
     n_fetch = min(n_results, available)
@@ -125,5 +183,58 @@ def retrieve(  # noqa: PLR0913, PLR0917
                 doc[:60],
             )
 
+    if not retrieved:
+        logger.info("Vector search returned no results for '%s'. Falling back to BM25.", query)
+        # Fire off BM25 fallback; the caller must await it if they want the result.
+        # We return empty here and let the agent tool handle the async fallback.
+
     logger.debug("retrieve('%s'): %d/%d chunks passed threshold.", query, len(retrieved), n_fetch)
     return retrieved
+
+
+async def retrieve_hybrid(
+    query: str,
+    n_results: int = 5,
+    distance_threshold: float = 1.3,
+    chroma_path: str | None = None,
+    collection_name: str | None = None,
+    embedding_model: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Hybrid retrieval: vector search first, BM25 fallback if vector search
+    returns no results above the distance threshold.
+
+    This is the preferred entry point for the agent tools. It handles the
+    async BM25 fallback transparently.
+
+    Args:
+        query: The natural-language search query.
+        n_results: Maximum number of candidates to fetch before filtering.
+        distance_threshold: Maximum L2 distance to consider relevant.
+        chroma_path: Optional override for Chroma storage path.
+        collection_name: Optional override for collection name.
+        embedding_model: Optional override for embedding model name.
+
+    Returns:
+        List of dicts (sorted by relevance) with keys:
+            - document (str): Chunk text.
+            - metadata (dict): Section, source, and chunk index fields.
+            - distance (float): L2 distance or 0.0 for BM25 results.
+    """
+    # Primary: vector search
+    results = retrieve(
+        query=query,
+        n_results=n_results,
+        distance_threshold=distance_threshold,
+        chroma_path=chroma_path,
+        collection_name=collection_name,
+        embedding_model=embedding_model,
+    )
+
+    if results:
+        return results
+
+    # Fallback: BM25 keyword search
+    logger.info("Falling back to BM25 keyword search for query: %s", query)
+    bm25_results = await _bm25_fallback(query, n_results=n_results)
+    return bm25_results

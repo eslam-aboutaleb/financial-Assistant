@@ -13,7 +13,11 @@ import shutil
 import sys
 from pathlib import Path
 
+import os
+os.environ["DATABASE_URL"] = "postgresql+asyncpg://omnicare:omnicare_password@localhost:5432/omnicare"
 import pytest
+from unittest.mock import patch
+patch("app.main.ingest_policy").start()
 
 # Ensure backend root is on sys.path
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -132,11 +136,16 @@ except ImportError:
             return [[0.0] * 384 for _ in input]
 
     fake_embed.SentenceTransformerEmbeddingFunction = FakeEmbeddingFunction
+    fake_embed.OpenAIEmbeddingFunction = FakeEmbeddingFunction
+
     fake_utils.embedding_functions = fake_embed
 
     sys.modules["chromadb"] = fake_chromadb
     sys.modules["chromadb.utils"] = fake_utils
     sys.modules["chromadb.utils.embedding_functions"] = fake_embed
+
+import pytest
+
 
 
 @pytest.fixture(scope="function")
@@ -175,9 +184,9 @@ def sample_claims_path(tmp_path, monkeypatch):
         ]
         temp_claims.write_text(json.dumps(baseline, indent=2), encoding="utf-8")
 
-    # Patch the settings path used by claim tools
-    monkeypatch.setattr(settings, "claims_file_path", str(temp_claims))
-    monkeypatch.setattr("app.config.settings.claims_file_path", str(temp_claims))
+    # Patch the settings path used by claim tools if the attribute exists
+    if hasattr(settings, "claims_file_path"):
+        monkeypatch.setattr(settings, "claims_file_path", str(temp_claims))
 
     return temp_claims
 
@@ -189,9 +198,11 @@ def test_client(sample_claims_path):
     """
     from fastapi.testclient import TestClient  # noqa: PLC0415
     from app.main import app  # noqa: PLC0415
+    from app.database import engine
 
     with TestClient(app) as client:
         yield client
+        
 
 
 @pytest.fixture(scope="function")
@@ -264,3 +275,14 @@ def mock_current_user():
     app.dependency_overrides[get_current_user] = _override_get_current_user
     yield {"Authorization": f"Bearer test-token-for-{_TEST_USER_ID}"}
     app.dependency_overrides.pop(get_current_user, None)
+
+
+import chromadb.utils.embedding_functions as _ef
+class FakeEmbeddingFunction:
+    def __init__(self, *args, **kwargs): pass
+    def __call__(self, input): return [[0.0] * 384 for _ in input]
+    def embed_query(self, input): return self.__call__(input) if isinstance(input, list) else self.__call__([input])[0]
+    def embed_documents(self, input): return self.__call__(input)
+    def name(self): return "default"
+    is_legacy = False
+_ef.OpenAIEmbeddingFunction = FakeEmbeddingFunction

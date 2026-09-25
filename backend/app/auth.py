@@ -1,13 +1,30 @@
+"""
+Authentication and authorization utilities for the OmniCare backend.
+
+This module provides JWT-based session management using HTTP-only cookies,
+Argon2 password hashing, and the ``get_current_user`` FastAPI dependency that
+resolves the authenticated user for every protected request.
+
+Security design decisions:
+  - JWT payloads store only the user UUID (``sub`` claim). No PII or role
+    claims are included to minimize token sensitivity.
+  - ``secure=False`` on cookies is intentional for local Docker development.
+    Set ``secure=True`` and configure ``TRUSTED_ORIGINS`` when deploying
+    behind HTTPS in production.
+  - A dummy Argon2 hash is used for timing-safe password comparisons when a
+    username does not exist, preventing user enumeration via response timing.
+  - ``current_user_id`` is set as a ``ContextVar`` so downstream code (agent
+    tools, business logic) can access the authenticated user without threading
+    the user object through every function call.
+"""
+
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 import os
-import time
 import uuid
+import datetime
 
+import jwt
 from fastapi import HTTPException, Request, Response, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from argon2 import PasswordHasher
@@ -17,21 +34,53 @@ from sqlalchemy import select
 
 from app.database import get_db
 from app.models.user import User
+from app.agent.context import current_user_id
 
+# JWT configuration. ``JWT_SECRET_KEY`` must be set in production; the
+# fallback value is for local development only.
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super-secret-key-for-development-only-change-me")
+ALGORITHM = "HS256"
+# Access tokens are long-lived (1 week) because the session is cookie-based.
+# For higher-security contexts, consider shorter TTLs with refresh tokens.
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 1 week
 COOKIE_NAME = "omnicare_access_token"
 
-# Dummy hash for timing attack protection
+# Dummy hash for timing attack protection. This hash is returned when a user
+# does not exist so that the Argon2 verification always takes constant time,
+# preventing attackers from enumerating valid usernames via response latency.
 DUMMY_PASSWORD_HASH = "$argon2id$v=19$m=65536,t=3,p=4$dummySalt$dummyHashDigest"  # noqa: S105
 
 ph = PasswordHasher()
 _bearer = HTTPBearer(auto_error=False)
 
+
 def hash_password(password: str) -> str:
+    """Hash a plaintext password using Argon2id.
+
+    Argon2 is the current recommended password hashing algorithm (winner of
+    the Password Hashing Competition). The default parameters (memory, time,
+    parallelism) are chosen to be resistant to GPU/ASIC attacks while
+    remaining fast enough for interactive signup flows.
+
+    Args:
+        password: The user's plaintext password.
+
+    Returns:
+        str: The Argon2id hash string suitable for storage.
+    """
     return ph.hash(password)
 
+
 def verify_password(password: str, hashed: str) -> bool:
+    """Verify a plaintext password against a stored Argon2id hash.
+
+    Args:
+        password: The plaintext password provided at login.
+        hashed: The stored Argon2id hash from the database.
+
+    Returns:
+        bool: True if the password matches, False otherwise.
+    """
     try:
         ph.verify(hashed, password)
         return True
@@ -40,80 +89,100 @@ def verify_password(password: str, hashed: str) -> bool:
     except Exception:
         return False
 
-def _b64url_encode(value: dict) -> str:
-    raw = json.dumps(value, separators=(",", ":")).encode()
-    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
-
-def _b64url_decode(value: str) -> bytes:
-    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 def create_access_token(user_id: uuid.UUID) -> str:
-    header = _b64url_encode({"alg": "HS256", "typ": "JWT"})
-    payload = _b64url_encode(
-        {
-            "sub": str(user_id),
-            "exp": int(time.time()) + (ACCESS_TOKEN_EXPIRE_MINUTES * 60),
-        }
-    )
-    unsigned = f"{header}.{payload}"
-    signature = hmac.new(
-        SECRET_KEY.encode(), unsigned.encode(), hashlib.sha256
-    ).digest()
-    encoded_signature = base64.urlsafe_b64encode(signature).rstrip(b"=").decode()
-    return f"{unsigned}.{encoded_signature}"
+    """Create a signed JWT access token for a user.
+
+    The token contains the user's UUID as the ``sub`` claim and an expiration
+    timestamp. No other claims are included to minimize the token's
+    sensitivity and reduce the attack surface if the token is intercepted.
+
+    Args:
+        user_id: The primary key UUID of the authenticated user.
+
+    Returns:
+        str: A signed JWT string suitable for setting as an HTTP-only cookie.
+    """
+    expire = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode = {"sub": str(user_id), "exp": expire}
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
 
 class _InvalidTokenError(Exception):
+    """Internal exception used to categorize token validation failures.
+
+    Wrapping PyJWT errors in a domain-specific exception keeps the token
+    decoding logic clean and makes it easy to distinguish auth failures from
+    other runtime errors in the ``get_current_user`` dependency.
+    """
+
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
 
+
 def _decode_token(token: str) -> uuid.UUID:
-    if not isinstance(token, str) or token.count(".") != 2:
-        raise _InvalidTokenError("malformed")
-    try:
-        header, payload, signature = token.split(".")
-    except ValueError as exc:
-        raise _InvalidTokenError("malformed") from exc
+    """Decode and validate a JWT, returning the embedded user UUID.
 
-    unsigned = f"{header}.{payload}"
-    expected = hmac.new(
-        SECRET_KEY.encode(), unsigned.encode(), hashlib.sha256
-    ).digest()
-    try:
-        provided = _b64url_decode(signature)
-    except (ValueError, TypeError) as exc:
-        raise _InvalidTokenError("bad-signature") from exc
-    if not hmac.compare_digest(expected, provided):
-        raise _InvalidTokenError("bad-signature")
+    Args:
+        token: The raw JWT string from the cookie or Authorization header.
 
-    try:
-        body = json.loads(_b64url_decode(payload))
-    except (ValueError, TypeError, json.JSONDecodeError) as exc:
-        raise _InvalidTokenError("malformed-payload") from exc
+    Returns:
+        uuid.UUID: The user's primary key extracted from the ``sub`` claim.
 
-    if not isinstance(body, dict):
-        raise _InvalidTokenError("malformed-payload")
-    exp = body.get("exp")
-    sub = body.get("sub")
-    if not isinstance(exp, int) or not isinstance(sub, str):
-        raise _InvalidTokenError("malformed-payload")
-    if exp < int(time.time()):
-        raise _InvalidTokenError("expired")
+    Raises:
+        _InvalidTokenError: If the token is expired, malformed, or invalid.
+    """
     try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        sub = payload.get("sub")
+        if sub is None:
+            raise _InvalidTokenError("malformed-payload")
         return uuid.UUID(sub)
-    except (ValueError, TypeError) as exc:
+    except jwt.ExpiredSignatureError as exc:
+        raise _InvalidTokenError("expired") from exc
+    except jwt.PyJWTError as exc:
+        raise _InvalidTokenError("invalid-token") from exc
+    except ValueError as exc:
         raise _InvalidTokenError("malformed-subject") from exc
+
 
 def _resolve_token(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None,
 ) -> str | None:
+    """Extract the JWT from the request, preferring the Authorization header.
+
+    The backend accepts tokens from two sources:
+      1. ``Authorization: Bearer <token>`` header (used by API clients and
+         mobile apps).
+      2. ``omnicare_access_token`` HTTP-only cookie (used by the web frontend).
+
+    If both are present, the Authorization header wins. This allows progressive
+    migration from cookies to bearer tokens without breaking existing clients.
+
+    Args:
+        request: The incoming FastAPI request.
+        credentials: Optional Bearer credentials from the HTTPBearer security
+            scheme.
+
+    Returns:
+        str | None: The raw JWT string, or None if no token was found.
+    """
     cookie_token = request.cookies.get(COOKIE_NAME)
     if credentials is not None:
         return credentials.credentials
     return cookie_token
 
+
 def set_session_cookie(response: Response, token: str) -> None:
+    """Set the session cookie on the response after successful authentication.
+
+    Args:
+        response: The FastAPI response object to modify.
+        token: The signed JWT to store in the cookie.
+    """
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
@@ -124,7 +193,13 @@ def set_session_cookie(response: Response, token: str) -> None:
         path="/",
     )
 
+
 def clear_session_cookie(response: Response) -> None:
+    """Delete the session cookie, typically during logout or token invalidation.
+
+    Args:
+        response: The FastAPI response object to modify.
+    """
     response.delete_cookie(
         key=COOKIE_NAME,
         path="/",
@@ -133,12 +208,38 @@ def clear_session_cookie(response: Response) -> None:
         secure=False,
     )
 
+
 async def get_current_user(
     request: Request,
     response: Response,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     session: AsyncSession = Depends(get_db),
 ) -> str:
+    """FastAPI dependency that resolves the authenticated user for the request.
+
+    This dependency is applied to every protected route. It extracts the JWT,
+    validates it, looks up the user in the database, and sets the user's UUID
+    in the ``current_user_id`` context variable so that downstream code (agent
+    tools, audit logging) can access it without explicit parameter passing.
+
+    Side effects:
+      - Sets ``current_user_id`` ContextVar on success.
+      - Clears the session cookie if the token is invalid or the user is not
+        found, forcing the client to re-authenticate.
+
+    Args:
+        request: The incoming FastAPI request (used for cookie access).
+        response: The FastAPI response (used for cookie clearing).
+        credentials: Optional Bearer credentials from the HTTPBearer scheme.
+        session: The async database session dependency.
+
+    Returns:
+        str: The authenticated user's UUID as a string.
+
+    Raises:
+        HTTPException: 401 if the token is missing, invalid, expired, or the
+        user account does not exist.
+    """
     token = _resolve_token(request, credentials)
     if token is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sign in to continue")
@@ -146,11 +247,12 @@ async def get_current_user(
         user_uuid = _decode_token(token)
     except _InvalidTokenError:
         clear_session_cookie(response)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")  # noqa: B904, E501
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token") from None
 
     user = (await session.execute(select(User).where(User.id == user_uuid))).scalar_one_or_none()
     if user is None:
         clear_session_cookie(response)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account not found")
 
+    current_user_id.set(user.id)
     return str(user.id)
