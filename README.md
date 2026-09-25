@@ -441,11 +441,38 @@ The OmniCare assistant is powered by **Google ADK** (`LlmAgent`) and routed thro
 
 ### UI Screens
 
-The React frontend provides:
+The React frontend provides a ChatGPT-style dark theme chat experience:
+
+![Login Screen](frontend/public/readme/02-login.png)
+
+**Sign-in screen** — users authenticate with email and password before accessing the chat.
+
+![Chat Interface](frontend/public/readme/03-chat-interface.png)
+
+**Main chat interface** — sidebar shows conversation history, and the chat window displays the current conversation with suggested prompts.
+
+![Policy Question with Citations](frontend/public/readme/04-policy-question.png)
+
+**Policy coverage question** — the agent returns a grounded answer with source citations from the policy document. Citations are displayed as expandable badges under the response.
+
+![Tool Details Expanded](frontend/public/readme/05-tool-details.png)
+
+**Tool call transparency** — clicking "Tool details" expands the underlying tool invocation, showing which tool was called and with what arguments.
+
+![Claim Status Lookup](frontend/public/readme/06-claim-status.png)
+
+**Claim status lookup** — the agent queries the claims database and returns the claim status with a citation to the OmniCare claims system.
+
+![Empty Chat State](frontend/public/readme/01-empty-state.png)
+
+**Empty state** — when no conversation is active, the chat window shows suggested prompts to help users get started.
+
+### UI Features
+
 - **ChatGPT-style dark theme** chat window with auto-scroll
 - **Markdown-rendered** assistant responses with syntax highlighting
 - **Expandable source citation badges** showing policy section and document
-- **Tool call transparency badges** displaying function name, arguments, and results
+- **Collapsible tool call details** showing function name, arguments, and results
 - **Sidebar** with conversation actions and sample prompt quick-start pills
 - **Responsive design** working on desktop and mobile viewports
 
