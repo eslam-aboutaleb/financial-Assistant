@@ -89,6 +89,13 @@ export default function ChatWindow({
       if (onMessageSent) onMessageSent();
     },
     onError: () => {
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "error",
+        content: "An unexpected error occurred while processing your request. Please try again later.",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
       setHasError(true);
     },
   });
@@ -170,12 +177,12 @@ export default function ChatWindow({
   }, [chatMutation]);
 
   const handleRetryLast = useCallback(() => {
-    const lastUserMessage = [...messages]
-      .reverse()
-      .find((m) => m.role === "user");
-    if (lastUserMessage) {
-      setMessages((prev) => prev.slice(0, prev.length - 1));
+    const lastUserMessageIndex = [...messages].reverse().findIndex((m) => m.role === "user");
+    if (lastUserMessageIndex !== -1) {
+      const actualIndex = messages.length - 1 - lastUserMessageIndex;
+      setMessages((prev) => prev.slice(0, actualIndex + 1));
       setHasError(false);
+      const lastUserMessage = messages[actualIndex];
       chatMutation.mutate(lastUserMessage.content);
     }
   }, [chatMutation, messages]);
@@ -238,7 +245,11 @@ export default function ChatWindow({
             data-testid="message-list"
           >
             {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+              <MessageBubble
+                key={message.id}
+                message={message}
+                onRetry={hasError ? handleRetryLast : undefined}
+              />
             ))}
             {chatMutation.isPending && !isReadOnly && (
               <div
