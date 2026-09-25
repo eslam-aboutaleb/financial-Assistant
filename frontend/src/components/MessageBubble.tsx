@@ -1,5 +1,21 @@
+/**
+ * MessageBubble component.
+ *
+ * Renders a single chat message with distinct styling for user, assistant,
+ * and error messages. Assistant messages support Markdown rendering with
+ * syntax highlighting, source citation badges, and tool call transparency
+ * badges.
+ *
+ * Layout:
+ *   - User messages are right-aligned with an ochre background.
+ *   - Assistant messages are left-aligned with a sand background and
+ *     include the bot avatar.
+ *   - Error messages use a red-tinted background and error icon.
+ */
+
+import { useState } from "react";
 import { Message } from "@/types/chat";
-import { Bot, User, AlertCircle } from "lucide-react";
+import { Bot, User, AlertCircle, Copy, Check, RefreshCw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -8,46 +24,88 @@ import SourcesBadge from "./SourcesBadge";
 import ToolCallBadge from "./ToolCallBadge";
 
 interface MessageBubbleProps {
+  /** The message to render. */
   message: Message;
+  /** Callback to retry the last user message. */
+  onRetry?: () => void;
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+function formatTime(date: Date): string {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "numeric",
+    hour12: true,
+  }).format(date);
+}
+
+export default function MessageBubble({
+  message,
+  onRetry,
+}: MessageBubbleProps) {
   const isUser = message.role === "user";
   const isError = message.role === "error";
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div
-      className={`flex w-full gap-4 ${isUser ? "justify-end" : "justify-start"}`}
+      id={`message-${message.id}`}
+      className={`flex w-full gap-3 ${isUser ? "justify-end" : "justify-start"} message-enter`}
+      data-testid={`message-${message.id}`}
+      data-message-role={message.role}
     >
       {!isUser && (
         <div
-          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 ${isError ? "bg-red-900/50" : "bg-indigo-600"}`}
+          id={`avatar-${message.id}`}
+          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${isError ? "bg-red-100" : "bg-ochre-100"}`}
+          data-testid={`avatar-${message.id}`}
         >
           {isError ? (
-            <AlertCircle className="w-5 h-5 text-red-500" />
+            <AlertCircle
+              className="w-4 h-4 text-red-700"
+              data-testid="error-icon"
+            />
           ) : (
-            <Bot className="w-5 h-5 text-white" />
+            <Bot className="w-4 h-4 text-ochre-800" data-testid="bot-icon" />
           )}
         </div>
       )}
 
       <div
-        className={`flex flex-col max-w-[85%] ${isUser ? "items-end" : "items-start"}`}
+        className={`flex flex-col ${isUser ? "items-end max-w-[78%]" : "items-start max-w-[92%]"}`}
+        data-testid={`message-content-${message.id}`}
       >
         <div
-          className={`px-5 py-3.5 text-[15px] leading-relaxed
-            ${
-              isUser
-                ? "bg-indigo-600 text-white rounded-2xl rounded-br-sm"
-                : isError
-                  ? "bg-red-950/30 border border-red-900 text-red-200 rounded-2xl rounded-bl-sm"
-                  : "bg-gray-800 border border-gray-700 text-gray-100 rounded-2xl rounded-bl-sm"
-            }`}
+          id={`message-bubble-${message.id}`}
+          className={`text-[15px] leading-relaxed shadow-subtle group relative transition-colors duration-200
+              ${
+                isUser
+                  ? "px-4 py-3 bg-ochre-600 text-white rounded-3xl rounded-tr-sm hover:bg-ochre-700"
+                  : isError
+                    ? "px-4 py-3 bg-red-50 border border-red-200 text-red-900 rounded-2xl rounded-bl-sm"
+                    : "px-4 py-3.5 bg-warm-surface border border-warm-border text-warm-ink rounded-3xl rounded-bl-sm hover:border-ochre-200"
+              }`}
+          data-testid={`message-bubble-${message.id}`}
         >
           {isUser ? (
-            <div className="whitespace-pre-wrap">{message.content}</div>
+            <div
+              id={`user-text-${message.id}`}
+              className="whitespace-pre-wrap"
+              data-testid={`user-text-${message.id}`}
+            >
+              {message.content}
+            </div>
           ) : (
-            <div className="prose prose-invert max-w-none prose-p:my-2 prose-pre:my-0 prose-pre:p-0 prose-code:text-indigo-300">
+            <div
+              id={`assistant-text-${message.id}`}
+              className="prose prose-slate max-w-none prose-p:my-2 prose-pre:my-0 prose-pre:p-0 prose-code:text-ochre-800 prose-code:bg-ochre-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded"
+              data-testid={`assistant-text-${message.id}`}
+            >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -58,14 +116,14 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
                         style={vscDarkPlus as any}
                         language={match[1]}
                         PreTag="div"
-                        className="rounded-md !my-4"
+                        className="rounded-lg !my-4"
                         {...props}
                       >
                         {String(children).replace(/\n$/, "")}
                       </SyntaxHighlighter>
                     ) : (
                       <code
-                        className="bg-gray-700 px-1.5 py-0.5 rounded text-sm font-mono"
+                        className="bg-ochre-50 px-1.5 py-0.5 rounded text-[13px] font-mono"
                         {...props}
                       >
                         {children}
@@ -78,24 +136,73 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
               </ReactMarkdown>
             </div>
           )}
+
+          {/* Hover actions */}
+          {!isUser && !isError && (
+            <div className="absolute -top-3 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <button
+                onClick={handleCopy}
+                className="p-1.5 bg-warm-surface border border-warm-border rounded-lg shadow-soft hover:shadow-medium transition-all"
+                aria-label={copied ? "Copied" : "Copy message"}
+              >
+                {copied ? (
+                  <Check className="w-3.5 h-3.5 text-green-700" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5 text-warm-muted" />
+                )}
+              </button>
+            </div>
+          )}
+          {isError && onRetry && (
+            <div className="absolute -top-3 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <button
+                onClick={onRetry}
+                className="p-1.5 bg-warm-surface border border-warm-border rounded-lg shadow-soft hover:shadow-medium transition-all flex items-center gap-1"
+                aria-label="Retry"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-warm-muted" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 mt-1.5 px-1 opacity-70 group-hover:opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100">
+          <span className="text-[11px] text-warm-muted">
+            {formatTime(message.timestamp)}
+          </span>
+          {isError && (
+            <span className="text-[11px] text-red-600">Failed to send</span>
+          )}
         </div>
 
         {!isUser && message.sources && message.sources.length > 0 && (
-          <div className="mt-2 w-full">
+          <div
+            id={`sources-container-${message.id}`}
+            className="mt-2 w-full"
+            data-testid={`sources-container-${message.id}`}
+          >
             <SourcesBadge sources={message.sources} />
           </div>
         )}
 
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="mt-2 w-full flex flex-col gap-2">
+          <div
+            id={`tool-calls-container-${message.id}`}
+            className="mt-2 w-full flex flex-col gap-2"
+            data-testid={`tool-calls-container-${message.id}`}
+          >
             <ToolCallBadge toolCalls={message.toolCalls} />
           </div>
         )}
       </div>
 
       {isUser && (
-        <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0 mt-1">
-          <User className="w-5 h-5 text-white" />
+        <div
+          id={`user-avatar-${message.id}`}
+          className="w-8 h-8 rounded-full bg-ochre-600 text-white flex items-center justify-center flex-shrink-0 mt-0.5 shadow-subtle"
+          data-testid={`user-avatar-${message.id}`}
+        >
+          <User className="w-4 h-4" data-testid="user-icon" />
         </div>
       )}
     </div>
