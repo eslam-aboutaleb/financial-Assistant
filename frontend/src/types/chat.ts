@@ -17,9 +17,9 @@ export interface ToolCall {
   /** The registered name of the agent tool (e.g., "query_policy"). */
   name: string;
   /** The arguments passed to the tool by the agent. */
-  arguments: Record<string, any>;
+  arguments: Record<string, unknown>;
   /** The tool's return value, present after execution completes. */
-  result?: any;
+  result?: unknown;
 }
 
 /**
@@ -77,4 +77,15 @@ export interface ConversationMeta {
 export interface ConversationDetail extends ConversationMeta {
   /** Ordered list of messages in this conversation. */
   messages: Message[];
+}
+
+/**
+ * Generic SSE event payload from the ADK streaming endpoint.
+ *
+ * The backend emits ADK event JSON objects; we do not need to fully type
+ * every field because the frontend only forwards them to the streaming
+ * consumer. If needed, expand this interface to cover specific event shapes.
+ */
+export interface ADKSSEEvent {
+  [key: string]: unknown;
 }
