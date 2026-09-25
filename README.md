@@ -263,6 +263,25 @@ docker-compose exec backend pytest tests/ -v
 
 ---
 
+## GitHub Actions
+
+This repository includes two GitHub Actions workflows to streamline development and deployment:
+
+- **CI** (`.github/workflows/ci.yml`): runs on every push and pull request to validate:
+  - Backend lint (`ruff`) and test suite (`pytest`)
+  - Frontend lint, test (`vitest`), and production build (`next build`)
+- **Deploy Containers** (`.github/workflows/deploy.yml`): runs on:
+  - pushes to `main`
+  - version tags matching `v*`
+  - manual dispatch from the Actions tab
+
+Deployment builds and publishes Docker images for both backend and frontend to **GitHub Container Registry (GHCR)**:
+
+- `ghcr.io/<owner>/<repo>-backend`
+- `ghcr.io/<owner>/<repo>-frontend`
+
+---
+
 ## Project Structure
 
 ```

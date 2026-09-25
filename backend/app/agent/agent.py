@@ -237,7 +237,6 @@ async def run_agent(user_id: str, message: str) -> dict[str, Any]:
         "session_id": session_id,
     }
 
-
 async def run_agent_stream(user_id: str, message: str) -> AsyncGenerator[str, None]:
     """
     Run the OmniCare agent and stream results as Server-Sent Events (SSE).
