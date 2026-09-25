@@ -56,7 +56,7 @@ export default function ChatInput({
   return (
     <div
       id="chat-input-wrapper"
-      className="relative flex items-end w-full bg-warm-surface border border-warm-border rounded-2xl shadow-soft focus-within:border-ochre-400 focus-within:ring-4 focus-within:ring-ochre-500/10 transition-all duration-200"
+      className="relative flex items-end w-full bg-warm-surface border border-warm-border rounded-2xl shadow-soft focus-within:border-ochre-400 focus-within:ring-4 focus-within:ring-ochre-500/10 transition-all duration-200 p-2"
       data-testid="chat-input-wrapper"
     >
       <textarea
@@ -77,7 +77,7 @@ export default function ChatInput({
         id="send-button"
         onClick={handleSubmit}
         disabled={isLoading || !value.trim()}
-        className="absolute right-3 bottom-3 p-2 bg-ochre-600 text-white rounded-xl hover:bg-ochre-700 disabled:bg-sand-100 disabled:text-warm-muted transition-all duration-200 flex-shrink-0 shadow-subtle disabled:shadow-none"
+        className="absolute right-2 bottom-2 p-2 bg-ochre-600 text-white rounded-xl hover:bg-ochre-700 disabled:bg-sand-100 disabled:text-warm-muted transition-all duration-200 flex-shrink-0 shadow-subtle disabled:shadow-none"
         data-testid="send-button"
         aria-label="Send message"
       >
