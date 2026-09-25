@@ -49,7 +49,7 @@ export async function sendMessage(
   token: string | null,
   message: string,
 ): Promise<ChatResponse> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const idempotencyKey = generateIdempotencyKey();
 
   const response = await fetch(`${apiUrl}/api/v1/chat`, {
@@ -91,7 +91,7 @@ export async function sendMessage(
  * @param token - The JWT access token for authentication.
  */
 export async function resetChat(token: string | null): Promise<void> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
   await fetch(`${apiUrl}/api/v1/chat/reset`, {
     method: "POST",
@@ -110,7 +110,7 @@ export async function resetChat(token: string | null): Promise<void> {
  * @throws Error if the request fails.
  */
 export async function getConversations(token: string) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const response = await fetch(`${apiUrl}/api/v1/chat/conversations`, {
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -127,7 +127,7 @@ export async function getConversations(token: string) {
  * @throws Error if the request fails.
  */
 export async function getConversationHistory(token: string, id: string) {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const response = await fetch(`${apiUrl}/api/v1/chat/conversations/${id}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -140,7 +140,7 @@ export async function streamMessage(
   message: string,
   onChunk: (eventData: any) => void
 ): Promise<void> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const idempotencyKey = generateIdempotencyKey();
 
   const response = await fetch(`${apiUrl}/api/v1/chat/stream`, {

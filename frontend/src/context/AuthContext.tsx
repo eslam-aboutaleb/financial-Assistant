@@ -16,7 +16,6 @@
  *   - ``logout`` clears both and triggers a toast notification.
  */
 
-"use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { toast } from "react-hot-toast";
