@@ -18,7 +18,6 @@
  *   - ``onMessageSent`` notifies the parent to refresh the sidebar list.
  */
 
-"use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Message } from "@/types/chat";
