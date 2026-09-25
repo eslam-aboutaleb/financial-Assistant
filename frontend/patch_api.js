@@ -7,7 +7,7 @@ export async function streamMessage(
   message: string,
   onChunk: (eventData: any) => void
 ): Promise<void> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const apiUrl = process.env.VITE_API_URL || "http://localhost:8000";
   const idempotencyKey = generateIdempotencyKey();
 
   const response = await fetch(\`\${apiUrl}/api/v1/chat/stream\`, {

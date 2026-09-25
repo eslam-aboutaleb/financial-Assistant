@@ -4,7 +4,6 @@ Loads environment variables from .env file with strict typing and sensible defau
 """
 
 import json
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -91,7 +90,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:3000",
-            "http://frontend:3000",
+            "http://localhost:3002",
             "http://127.0.0.1:3000",
         ],
         description="Allowed CORS origin URLs for browser frontend integration",
@@ -161,9 +160,11 @@ class Settings(BaseSettings):
         return value
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Resolve .env relative to this file's project root so settings load
+        # consistently regardless of the current working directory.
+        env_file=str(Path(__file__).resolve().parents[2] / ".env"),
         env_file_encoding="utf-8",
-        extra="ignore",  # Reject unknown env vars to catch typos early (e.g. from Docker like PATH, HOSTNAME),
+        extra="ignore",  # Reject unknown env vars to catch typos early,
         case_sensitive=False,
     )
 

@@ -11,7 +11,7 @@ Tests horizontal privilege escalation (IDOR) by verifying that:
 import pytest
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi.testclient import TestClient
+from datetime import UTC
 
 
 # ============================================================================
@@ -22,20 +22,31 @@ from fastapi.testclient import TestClient
 @pytest.fixture(scope="function")
 def two_users(test_client):
     """Create two users and return their auth tokens."""
+    import time
+
+    def signup_with_retry(username, password, max_retries=3, delay=0.5):
+        for attempt in range(max_retries):
+            try:
+                return test_client.post(
+                    "/api/v1/auth/signup", json={"username": username, "password": password}
+                )
+            except Exception as exc:
+                if "another operation is in progress" in str(exc) and attempt < max_retries - 1:
+                    time.sleep(delay * (attempt + 1))
+                    continue
+                raise
+        return None
+
     # User A
     username_a = f"security_usera_{uuid.uuid4().hex[:8]}"
     password = "TestPass123!"
-    r_a = test_client.post("/api/v1/auth/signup", json={
-        "username": username_a, "password": password
-    })
+    r_a = signup_with_retry(username_a, password)
     token_a = r_a.json()["access_token"]
     headers_a = {"Authorization": f"Bearer {token_a}"}
 
     # User B
     username_b = f"security_userb_{uuid.uuid4().hex[:8]}"
-    r_b = test_client.post("/api/v1/auth/signup", json={
-        "username": username_b, "password": password
-    })
+    r_b = signup_with_retry(username_b, password)
     token_b = r_b.json()["access_token"]
     headers_b = {"Authorization": f"Bearer {token_b}"}
 
@@ -52,13 +63,13 @@ def two_users(test_client):
 
 class TestClaimIDOR:
     @pytest.mark.asyncio
-    async def test_user_b_cannot_check_user_a_claim_status(self, two_users):
+    async def test_user_b_cannot_check_user_a_claim_status(self):
         """User B's token cannot retrieve User A's claim status."""
         from app.agent.tools.claim_status import get_claim_status
         from app.agent.context import current_user_id
 
         # Set context to User B
-        user_b_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
+        uuid.UUID("00000000-0000-0000-0000-000000000002")
         current_user_id.set(uuid.UUID("00000000-0000-0000-0000-000000000002"))
 
         mock_session = AsyncMock()
@@ -76,7 +87,7 @@ class TestClaimIDOR:
             assert result["found"] is False or "error" in result
 
     @pytest.mark.asyncio
-    async def test_user_b_cannot_submit_claim_as_user_a(self, two_users):
+    async def test_user_b_cannot_submit_claim_as_user_a(self):
         """Submit claim sets owner to current user, cannot spoof another user."""
         from app.agent.tools.submit_claim import submit_claim
         from app.agent.context import current_user_id
@@ -87,8 +98,10 @@ class TestClaimIDOR:
 
         mock_session = AsyncMock()
         mock_session.add = MagicMock()
-        with patch("app.agent.tools.submit_claim.async_session_factory") as mock_factory, \
-             patch("app.rag.claims_rag.ingest_claim_sync"):
+        with (
+            patch("app.agent.tools.submit_claim.async_session_factory") as mock_factory,
+            patch("app.rag.claims_rag.ingest_claim_sync"),
+        ):
             mock_factory.return_value.__aenter__.return_value = mock_session
             result = await submit_claim(
                 policy_number="POL-1092",
@@ -104,7 +117,7 @@ class TestClaimIDOR:
         assert str(added_claim.owner_id) == str(user_b_id)
 
     @pytest.mark.asyncio
-    async def test_search_claims_does_not_leak_other_users_claims(self, two_users):
+    async def test_search_claims_does_not_leak_other_users_claims(self):
         """Claims search only returns claims owned by current user."""
         from app.agent.tools.search_claims import search_claims
         from app.agent.context import current_user_id
@@ -212,71 +225,83 @@ class TestTokenForgery:
     def test_tampered_token_rejected(self, test_client):
         """Chat endpoint rejects tampered JWT tokens."""
         tampered_token = "eyJhbGciOiJIUzI1NiJ9.tampered.payload.signature"
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
-            "Authorization": f"Bearer {tampered_token}"
-        })
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {tampered_token}"},
+        )
         assert response.status_code == 401
 
     def test_expired_token_rejected(self, test_client):
         """Chat endpoint rejects expired JWT tokens."""
         import jwt
         from app.auth import SECRET_KEY, ALGORITHM
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
         expired_payload = {
             "sub": str(uuid.uuid4()),
-            "exp": datetime.now(tz=timezone.utc) - timedelta(hours=1),
+            "exp": datetime.now(tz=UTC) - timedelta(hours=1),
         }
         expired_token = jwt.encode(expired_payload, SECRET_KEY, algorithm=ALGORITHM)
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
-            "Authorization": f"Bearer {expired_token}"
-        })
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {expired_token}"},
+        )
         assert response.status_code == 401
 
     def test_wrong_secret_token_rejected(self, test_client):
         """Chat endpoint rejects tokens signed with wrong secret."""
         import jwt
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
         wrong_secret_payload = {
             "sub": str(uuid.uuid4()),
-            "exp": datetime.now(tz=timezone.utc) + timedelta(hours=1),
+            "exp": datetime.now(tz=UTC) + timedelta(hours=1),
         }
-        wrong_token = jwt.encode(wrong_secret_payload, "wrong-secret-key", algorithm="HS256")
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
-            "Authorization": f"Bearer {wrong_token}"
-        })
+        wrong_token = jwt.encode(
+            wrong_secret_payload,
+            "this-is-a-long-enough-wrong-secret-key-for-testing",
+            algorithm="HS256",
+        )
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {wrong_token}"},
+        )
         assert response.status_code == 401
 
     def test_token_without_sub_rejected(self, test_client):
         """Chat endpoint rejects tokens missing 'sub' claim."""
         import jwt
         from app.auth import SECRET_KEY, ALGORITHM
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
         no_sub_payload = {
-            "exp": datetime.now(tz=timezone.utc) + timedelta(hours=1),
+            "exp": datetime.now(tz=UTC) + timedelta(hours=1),
         }
         no_sub_token = jwt.encode(no_sub_payload, SECRET_KEY, algorithm=ALGORITHM)
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
-            "Authorization": f"Bearer {no_sub_token}"
-        })
+        response = test_client.post(
+            "/api/v1/chat",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {no_sub_token}"},
+        )
         assert response.status_code == 401
 
     def test_nonexistent_user_token_clears_cookie_and_rejects(self, test_client):
         """Token for non-existent user returns 401 and clears cookie."""
         import jwt
         from app.auth import SECRET_KEY, ALGORITHM
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta
 
         # Create a valid token for a UUID that doesn't exist in DB
         fake_user_id = str(uuid.uuid4())
         payload = {
             "sub": fake_user_id,
-            "exp": datetime.now(tz=timezone.utc) + timedelta(hours=1),
+            "exp": datetime.now(tz=UTC) + timedelta(hours=1),
         }
         token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
-        response = test_client.post("/api/v1/chat", json={"message": "Hello"}, headers={
-            "Authorization": f"Bearer {token}"
-        })
+        response = test_client.post(
+            "/api/v1/chat", json={"message": "Hello"}, headers={"Authorization": f"Bearer {token}"}
+        )
         assert response.status_code == 401

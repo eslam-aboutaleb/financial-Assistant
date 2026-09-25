@@ -1,7 +1,7 @@
 /**
  * Providers component.
  *
- * Wraps the entire Next.js application in the context providers and query
+ * Wraps the entire React application in the context providers and query
  * client required by the client-side features.
  *
  * Provider stack (innermost to outermost):
@@ -13,7 +13,6 @@
  * or used elsewhere.
  */
 
-"use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactNode, useState } from "react";

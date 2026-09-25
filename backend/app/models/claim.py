@@ -5,6 +5,7 @@ from sqlalchemy.dialects.postgresql import UUID
 
 from app.models.base import Base
 
+
 class Claim(Base):
     __tablename__ = "claims"
 
@@ -15,5 +16,6 @@ class Claim(Base):
     status: Mapped[str] = mapped_column(String)
     amount: Mapped[float] = mapped_column(Float)
     description: Mapped[str] = mapped_column(String)
-    owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
