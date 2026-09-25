@@ -18,7 +18,7 @@ from typing import Any
 import chromadb
 from sqlalchemy import text
 
-from app.config import settings
+from app.config import get_settings
 from app.database import async_session_factory
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,7 @@ def get_collection(
     Returns:
         A Chroma Collection object ready for querying.
     """
+    settings = get_settings()
     chroma_path = chroma_path or settings.chroma_db_path
     collection_name = collection_name or settings.chroma_collection_name
     embedding_model = embedding_model or settings.embedding_model

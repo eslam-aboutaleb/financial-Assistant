@@ -28,8 +28,8 @@ def test_default_settings():
 
 def test_jwt_secret_key_validation():
     """Verify JWT_SECRET_KEY default and validation."""
-    # Default is dev, should allow 'change-me'
-    cfg = Settings(environment="dev")
+    # Default is development, should allow 'change-me'
+    cfg = Settings(environment="development")
     assert "change-me" in cfg.jwt_secret_key
 
     # In production, 'change-me' should raise ValidationError

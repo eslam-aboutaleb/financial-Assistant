@@ -667,14 +667,12 @@ class TestChatEdgeCases:
             assert response.status_code == 200
 
     def test_chat_very_long_message(self, test_client, mock_current_user):
-        """Very long messages (10,000 chars) return 200."""
-        with patch("app.api.v1.chat.run_agent", new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = {"response": "OK", "sources": [], "tool_calls": []}
-            long_msg = "a" * 10000
-            response = test_client.post(
-                "/api/v1/chat", json={"message": long_msg}, headers=mock_current_user
-            )
-            assert response.status_code == 200
+        """Very long messages (10,000 chars) are rejected as too long."""
+        long_msg = "a" * 10000
+        response = test_client.post(
+            "/api/v1/chat", json={"message": long_msg}, headers=mock_current_user
+        )
+        assert response.status_code == 422
 
     def test_chat_message_with_special_chars(self, test_client, mock_current_user):
         """Messages with special characters (emoji, unicode, etc.) return 200."""

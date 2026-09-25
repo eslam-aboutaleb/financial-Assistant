@@ -21,16 +21,11 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { toast } from "react-hot-toast";
 
 interface AuthContextType {
-  /** The JWT access token, or null if not authenticated. */
   token: string | null;
-  /** The authenticated user's UUID, or null if not authenticated. */
   userId: string | null;
-  /** Whether the auth state has finished hydrating from localStorage. */
   isLoaded: boolean;
-  /** Log in a user by storing their token and ID. */
   login: (token: string, userId: string) => void;
-  /** Log out the current user and clear stored credentials. */
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -42,13 +37,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Hydrate auth state from localStorage on initial mount.
   useEffect(() => {
+    let shouldSetToken = false;
+    let shouldSetUserId = false;
+
     const storedToken = localStorage.getItem("omnicare_token");
     const storedUserId = localStorage.getItem("omnicare_user_id");
+
     if (storedToken && storedUserId) {
-      setToken(storedToken);
-      setUserId(storedUserId);
+      if (storedToken.includes(".")) {
+        setToken(storedToken);
+        shouldSetToken = true;
+      } else {
+        localStorage.removeItem("omnicare_token");
+      }
+
+      try {
+        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuid.test(storedUserId)) {
+          setUserId(storedUserId);
+          shouldSetUserId = true;
+        } else {
+          localStorage.removeItem("omnicare_user_id");
+        }
+      } catch {
+        localStorage.removeItem("omnicare_user_id");
+      }
     }
-    setIsLoaded(true);
+
+    if (!shouldSetToken || !shouldSetUserId) {
+      setIsLoaded(true);
+    } else {
+      setIsLoaded(true);
+    }
   }, []);
 
   const login = (newToken: string, newUserId: string) => {
@@ -58,7 +78,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserId(newUserId);
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+      await fetch(`${apiUrl}/api/v1/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Best-effort logout; clear local state regardless.
+    }
+
     localStorage.removeItem("omnicare_token");
     localStorage.removeItem("omnicare_user_id");
     setToken(null);

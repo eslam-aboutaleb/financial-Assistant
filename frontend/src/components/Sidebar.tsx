@@ -19,6 +19,7 @@ import { Plus, Shield, LogOut, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getConversations } from "@/lib/api";
 import { ConversationMeta } from "@/types/chat";
+import { useAuth } from "@/context/AuthContext";
 
 interface SidebarProps {
   /** Callback when the user clicks "New Chat". */
@@ -54,12 +55,12 @@ export default function Sidebar({
   refreshTrigger = 0,
   activeConversationId,
 }: SidebarProps) {
-  
+  const { token } = useAuth();
 
   const { data } = useQuery({
     queryKey: ["conversations", refreshTrigger],
-    queryFn: () => getConversations(),
-    enabled: true,
+    queryFn: () => getConversations(token!),
+    enabled: !!token,
   });
 
   const chats: ConversationMeta[] = data?.conversations || [];

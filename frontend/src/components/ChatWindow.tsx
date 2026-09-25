@@ -19,18 +19,17 @@ import ChatInput from "./ChatInput";
 import { StopCircle, RefreshCw, ChevronDown, Shield } from "lucide-react";
 
 interface ChatWindowProps {
-  /** Callback fired when the user starts a new chat. */
   onNewChat: () => void;
-  /** If set, load and display this conversation in read-only mode. */
   historyId?: string | null;
-  /** Callback fired after a message is successfully sent. */
   onMessageSent?: () => void;
+  onAuthError?: () => void;
 }
 
 export default function ChatWindow({
   onNewChat,
   historyId,
   onMessageSent,
+  onAuthError,
 }: ChatWindowProps) {
   const {
     messages,
@@ -49,6 +48,7 @@ export default function ChatWindow({
     onNewChat,
     historyId,
     onMessageSent,
+    onAuthError,
   });
 
   return (

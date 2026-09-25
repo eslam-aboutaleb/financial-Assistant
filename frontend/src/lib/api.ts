@@ -67,7 +67,7 @@ export async function sendMessage(
     return response.json();
   }
 
-  let errorMessage = "Failed to send message. Please try again.";
+  let errorMessage = "Something went wrong. Please try again later.";
   try {
     const errorData = await response.json();
     if (errorData.error?.message) {
@@ -77,6 +77,10 @@ export async function sendMessage(
     }
   } catch {
     // Body was not JSON
+  }
+
+  if (response.status === 401) {
+    errorMessage = "Session expired. Please log in again.";
   }
 
   throw new Error(errorMessage);
@@ -114,7 +118,7 @@ export async function getConversations(token: string) {
   const response = await fetch(`${apiUrl}/api/v1/chat/conversations`, {
     headers: { Authorization: `Bearer ${token}` }
   });
-  if (!response.ok) throw new Error("Failed to load conversations");
+  if (!response.ok) throw new Error("Something went wrong. Please try again later.");
   return response.json();
 }
 
@@ -131,7 +135,7 @@ export async function getConversationHistory(token: string, id: string) {
   const response = await fetch(`${apiUrl}/api/v1/chat/conversations/${id}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
-  if (!response.ok) throw new Error("Failed to load conversation history");
+  if (!response.ok) throw new Error("Something went wrong. Please try again later.");
   return response.json();
 }
 
@@ -155,13 +159,18 @@ export async function streamMessage(
   });
 
   if (!response.ok) {
-    let errorMessage = "Failed to send message.";
+    let errorMessage = "Something went wrong. Please try again later.";
     try {
       const errorData = await response.json();
       errorMessage = errorData.detail || errorData.error?.message || errorMessage;
     } catch {
       // ignore JSON error
     }
+
+    if (response.status === 401) {
+      errorMessage = "Session expired. Please log in again.";
+    }
+
     throw new Error(errorMessage);
   }
 

@@ -28,7 +28,7 @@ import chromadb
 from app.rag.embedding import EmbeddingFactory
 from sqlalchemy import text
 
-from app.config import settings
+from app.config import get_settings
 from app.database import async_session_factory
 
 logger = logging.getLogger(__name__)
@@ -212,6 +212,7 @@ def ingest_policy(
     Returns:
         Number of chunks currently stored in the collection after this call.
     """
+    settings = get_settings()
     policy_path = policy_path or settings.policy_file_path
     chroma_path = chroma_path or settings.chroma_db_path
     collection_name = collection_name or settings.chroma_collection_name

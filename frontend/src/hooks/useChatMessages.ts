@@ -21,10 +21,12 @@ export function useChatMessages({
   onNewChat,
   historyId,
   onMessageSent,
+  onAuthError,
 }: {
   onNewChat: () => void;
   historyId?: string | null;
   onMessageSent?: () => void;
+  onAuthError?: () => void;
 }) {
   const { token } = useAuth();
   
@@ -77,10 +79,14 @@ export function useChatMessages({
       if (onMessageSent) onMessageSent();
     },
     onError: (error: Error) => {
+      if (error.message.includes("Session expired") || error.message.includes("Sign in to continue")) {
+        onAuthError?.();
+      }
+
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "error",
-        content: error.message || "An unexpected error occurred while processing your request. Please try again later.",
+        content: error.message || "Something went wrong. Please try again later.",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);

@@ -171,8 +171,21 @@ except ImportError:
     sys.modules["chromadb.utils.embedding_functions"] = fake_embed
 
 
-# Patch ingest_policy to avoid network calls during test client startup
-patch("app.main.ingest_policy").start()
+# Patch ingest_policy to avoid network calls during test client startup.
+# Import and keep the real function before patching so e2e tests can use it.
+import app.main as _app_main_module  # noqa: PLC0415
+
+_real_ingest_policy = _app_main_module.ingest_policy
+_ingest_policy_patcher = patch("app.main.ingest_policy")
+_ingest_policy_patcher.start()
+
+
+@pytest.fixture(scope="function")
+def real_ingest_policy():
+    """Stop the global ingest_policy mock and restore the real function for e2e tests."""
+    _ingest_policy_patcher.stop()
+    yield _real_ingest_policy
+    _ingest_policy_patcher.start()
 
 
 @pytest.fixture(scope="function")

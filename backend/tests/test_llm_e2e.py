@@ -47,11 +47,14 @@ def isolated_chroma_dir():
 
 
 @pytest.fixture()
-def e2e_user(test_client):
+def e2e_user(test_client, isolated_chroma_dir, real_ingest_policy):
     """
     Create a real user in the database for E2E tests.
     Returns the auth headers for that user.
     """
+    from app.config import get_settings
+    from app.rag.retriever import _collection_cache
+
     username = f"e2e_user_{__import__('uuid').uuid4().hex[:8]}"
     password = "E2ePass123!"
     signup_response = test_client.post(
@@ -63,6 +66,20 @@ def e2e_user(test_client):
     )
     assert signup_response.status_code == 201, f"Failed to create E2E user: {signup_response.text}"
     token = signup_response.json()["access_token"]
+
+    chroma_path = isolated_chroma_dir
+    try:
+        os.environ["CHROMA_DB_PATH"] = chroma_path
+        os.environ["CHROMA_COLLECTION_NAME"] = get_settings().chroma_collection_name
+        get_settings.cache_clear()
+        _collection_cache.clear()
+        count = real_ingest_policy()
+        logger.info(f"E2E test ingested {count} policy chunks")
+    finally:
+        os.environ["CHROMA_DB_PATH"] = isolated_chroma_dir
+        get_settings.cache_clear()
+        _collection_cache.clear()
+
     return {"Authorization": f"Bearer {token}"}
 
 

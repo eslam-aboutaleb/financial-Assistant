@@ -2,26 +2,32 @@
  * AuthModal component.
  *
  * A modal dialog for user authentication. Supports both sign-in and sign-up
- * modes, toggled by the ``isLogin`` state. The form validates input lengths
+ * modes, controlled by the ``isLogin`` prop. The form validates input lengths
  * client-side before submitting to the backend auth endpoints.
  *
  * Props:
- *   onAuthenticated: Callback receiving the JWT and user ID after successful
+ *   isLogin: When true, renders sign-in fields; when false, renders sign-up fields.
+ *   onAuthenticated: Callback receiving the access token and user ID after successful
  *     authentication. The parent uses this to update global auth state.
+ *   onToggleMode: Callback invoked when the user clicks the toggle link to switch
+ *     between sign-in and sign-up modes.
  */
-
 
 import { useState } from "react";
 import { toast } from "react-hot-toast";
 import { Eye, EyeOff, Shield } from "lucide-react";
 
 interface AuthModalProps {
-  /** Callback invoked with the access token and user ID after successful auth. */
-  onAuthenticated: (userId: string) => void;
+  isLogin: boolean;
+  onAuthenticated: (token: string, userId: string) => void;
+  onToggleMode: () => void;
 }
 
-export default function AuthModal({ onAuthenticated }: AuthModalProps) {
-  const [isLogin, setIsLogin] = useState(true);
+export default function AuthModal({
+  isLogin,
+  onAuthenticated,
+  onToggleMode,
+}: AuthModalProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -93,7 +99,7 @@ export default function AuthModal({ onAuthenticated }: AuthModalProps) {
         ? "Successfully signed in!"
         : "Successfully signed up!";
       toast.success(successMsg, { id: successMsg });
-      onAuthenticated(data.user_id);
+      onAuthenticated(data.access_token, data.user_id);
     } catch (err: any) {
       toast.error(err.message, { id: err.message });
     } finally {
@@ -256,10 +262,7 @@ export default function AuthModal({ onAuthenticated }: AuthModalProps) {
 
           <div className="mt-6 text-center">
             <button
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setFieldErrors({});
-              }}
+              onClick={onToggleMode}
               className="text-insurance-info hover:text-insurance-ink text-sm font-medium transition-colors"
             >
               {isLogin
