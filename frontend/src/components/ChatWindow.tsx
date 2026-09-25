@@ -64,14 +64,14 @@ export default function ChatWindow({
   useEffect(() => {
     if (historyData?.messages) {
       setMessages(
-        historyData.messages.map((m: any) => ({
+        historyData.messages.map((m: { id?: string; role: Message["role"]; content: string; timestamp?: string; sources?: string[]; tool_calls?: Message["toolCalls"] }) => ({
           id: m.id || Date.now().toString(),
           role: m.role,
           content: m.content,
-          timestamp: new Date(m.timestamp),
+          timestamp: new Date(m.timestamp || Date.now()),
           sources: m.sources,
           toolCalls: m.tool_calls,
-        })),
+        })) satisfies Message[],
       );
     }
   }, [historyData]);

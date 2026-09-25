@@ -351,19 +351,7 @@ The OmniCare Assistant adheres to strict enterprise safety controls:
 1. **Prompt Injection Defense**: Guardrail instructions explicitly reject system prompt extraction, persona hijacking, and instruction overrides.
 2. **Domain Boundary Enforcement**: Restricts responses strictly to insurance policy coverage, claims lookups, and submissions.
 3. **Data Integrity**: New claim submissions enforce schema validation (positive amounts, required policy identifiers, minimum description lengths) before modifying storage.
-4. **Least-Privilege Containers**: Frontend production image runs under a dedicated, unprivileged `nextjs` user.
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Frontend** | React 18, Vite, Tailwind CSS | ChatGPT-style chat UI |
-| **Backend** | FastAPI, Uvicorn | REST API server |
-| **AI Agent** | Google ADK | Agent orchestration & tool management |
-| **LLM Routing** | LiteLLM | Model-agnostic LLM provider |
-| **LLM** | OpenAI GPT-4o-mini | Language model (via LiteLLM) |
-| **Vector DB** | Chroma (local) | Policy document embeddings & RAG |
-| **Embeddings** | OpenAI Embedding API (text-embedding-3-small) | Hosted embedding model |
-| **Validation** | Pydantic | Request/response & data validation |
-| **Testing** | pytest | Automated test suite |
-| **Deployment** | Docker, Docker Compose | Containerization |
+4. **Least-Privilege Containers**: Frontend production image runs under a dedicated, unprivileged non-root `nodejs` user.
 
 ---
 
@@ -439,42 +427,62 @@ The OmniCare assistant is powered by **Google ADK** (`LlmAgent`) and routed thro
 ---
 
 
-### UI Screens
+## UI/UX Overview (Step-by-Step Walkthrough)
 
-The React frontend provides a ChatGPT-style dark theme chat experience:
+The OmniCare web application provides an intuitive, accessible, and responsive user experience designed for policyholders to manage insurance inquiries and claims seamlessly. Below is an overview of the end-to-end user journey:
 
-![Login Screen](frontend/public/readme/02-login.png)
+### Step 1: Secure Authentication & Sign-In Landing
+Users begin at the OmniCare authentication portal. Signing in binds the session to the authenticated user ID (`current_user_id`), enforcing strict multi-tenant isolation and preventing unauthorized access to claims data.
 
-**Sign-in screen** — users authenticate with email and password before accessing the chat.
+![Step 1 - Authentication Landing](frontend/public/readme/01-empty-state.png)
 
-![Chat Interface](frontend/public/readme/03-chat-interface.png)
+---
 
-**Main chat interface** — sidebar shows conversation history, and the chat window displays the current conversation with suggested prompts.
+### Step 2: Form Validation & Proactive User Feedback
+The login interface incorporates immediate client-side validation and browser-native feedback to catch formatting errors (such as missing email `@` symbols) before submitting requests to the backend.
 
-![Policy Question with Citations](frontend/public/readme/04-policy-question.png)
+![Step 2 - Input Validation](frontend/public/readme/02-login.png)
 
-**Policy coverage question** — the agent returns a grounded answer with source citations from the policy document. Citations are displayed as expandable badges under the response.
+---
 
-![Tool Details Expanded](frontend/public/readme/05-tool-details.png)
+### Step 3: Conversational Workspace & Quick Prompts
+Once signed in, the user is greeted by a clean, ChatGPT-style workspace:
+- **Conversation Sidebar**: Displays past chat sessions with timestamp tags, a **"New Chat"** button to start fresh threads, and a **Logout** option.
+- **Welcome Quick-Start Pills**: Suggested prompt cards (*"Check my recent claims"*, *"What is covered under water damage?"*, *"File a new claim"*) let users kick off common tasks with a single click.
 
-**Tool call transparency** — clicking "Tool details" expands the underlying tool invocation, showing which tool was called and with what arguments.
+![Step 3 - Main Chat Interface & Starter Prompts](frontend/public/readme/03-chat-interface.png)
 
-![Claim Status Lookup](frontend/public/readme/06-claim-status.png)
+---
 
-**Claim status lookup** — the agent queries the claims database and returns the claim status with a citation to the OmniCare claims system.
+### Step 4: Policy Coverage Inquiries with Grounded Citations (RAG)
+When a user asks complex insurance questions (e.g., *"What is covered under water damage?"*), the agent performs semantic vector retrieval over the indexed policy documents in **ChromaDB**. The answer is synthesized with exact coverage limits, deductibles, exclusions, and an interactive **`Sources (3)`** citation badge.
 
-![Empty Chat State](frontend/public/readme/01-empty-state.png)
+![Step 4 - Policy Coverage Q&A with Citations](frontend/public/readme/04-policy-question.png)
 
-**Empty state** — when no conversation is active, the chat window shows suggested prompts to help users get started.
+---
 
-### UI Features
+### Step 5: Explainable AI & Tool Execution Transparency
+OmniCare emphasizes transparency and auditability. Users can expand the **"Tool details"** badge to inspect the real-time tool invocation (`query_policy`), viewing how the agent retrieved data from the knowledge base to formulate its response.
 
-- **ChatGPT-style dark theme** chat window with auto-scroll
-- **Markdown-rendered** assistant responses with syntax highlighting
-- **Expandable source citation badges** showing policy section and document
-- **Collapsible tool call details** showing function name, arguments, and results
-- **Sidebar** with conversation actions and sample prompt quick-start pills
-- **Responsive design** working on desktop and mobile viewports
+![Step 5 - Tool Call Transparency Details](frontend/public/readme/05-tool-details.png)
+
+---
+
+### Step 6: Multi-Turn Conversation & Claims Status Tracking
+The assistant maintains context across conversational turns. In the same thread, users can transition from policy questions to checking real-time claim records (e.g., *"What is the status of claim CLM-8821?"*). The agent invokes `get_claim_status` against PostgreSQL and guides the user with clear findings and support contact details.
+
+![Step 6 - Claim Status Tracking](frontend/public/readme/06-claim-status.png)
+
+---
+
+### Key UI/UX Capabilities
+
+- **Modern Clean Theme**: Thoughtfully styled typography, balanced spacing, and high-contrast readable message cards.
+- **Markdown & Code Rendering**: Full support for rich text formatting, lists, tables, bold styling, and code blocks in assistant responses.
+- **Source Citation Transparency**: Expandable source pills displaying referenced document sections and confidence attribution.
+- **Collapsible Tool Badges**: Real-time visual confirmation of backend autonomous tool calls and parameters.
+- **Persistent Sidebar Navigation**: Fast switching across past conversations and session states.
+- **Responsive Layout**: Fluid design optimized for desktop and mobile viewports.
 
 ### API Verification
 

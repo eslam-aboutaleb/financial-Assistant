@@ -331,9 +331,19 @@ async def chat_stream(
     request: Request,
     current_user_id: str = Depends(get_current_user),
 ) -> StreamingResponse:
+    if payload.user_id and payload.user_id != current_user_id:
+        logger.warning(
+            "Request body user_id '%s' differs from authenticated user '%s'; using authenticated user.",
+            payload.user_id,
+            current_user_id,
+        )
+        effective_user_id = current_user_id
+    else:
+        effective_user_id = payload.user_id or current_user_id
+
     try:
         generator = run_agent_stream(
-            user_id=current_user_id,
+            user_id=effective_user_id,
             message=payload.message,
         )
         return StreamingResponse(generator, media_type="text/event-stream")

@@ -12,7 +12,7 @@
  *   the deployed backend origin.
  */
 
-import { ChatResponse } from "@/types/chat";
+import { ChatResponse, ADKSSEEvent } from "@/types/chat";
 
 /**
  * Generate a cryptographically random idempotency key.
@@ -138,7 +138,7 @@ export async function getConversationHistory(token: string, id: string) {
 export async function streamMessage(
   token: string | null,
   message: string,
-  onChunk: (eventData: any) => void
+  onChunk: (eventData: ADKSSEEvent) => void
 ): Promise<void> {
   const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const idempotencyKey = generateIdempotencyKey();
