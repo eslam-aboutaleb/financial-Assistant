@@ -10,7 +10,6 @@
  *     authentication. The parent uses this to update global auth state.
  */
 
-"use client";
 
 import { useState } from "react";
 import { toast } from "react-hot-toast";
@@ -72,7 +71,7 @@ export default function AuthModal({ onAuthenticated }: AuthModalProps) {
 
     setIsLoading(true);
     const endpoint = isLogin ? "/api/v1/auth/signin" : "/api/v1/auth/signup";
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
     try {
       const res = await fetch(`${apiUrl}${endpoint}`, {
