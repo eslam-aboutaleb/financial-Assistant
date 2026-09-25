@@ -22,7 +22,11 @@ interface ChatInputProps {
   isLoading: boolean;
 }
 
-export default function ChatInput({ onSend, isLoading, autoFocus }: ChatInputProps) {
+export default function ChatInput({
+  onSend,
+  isLoading,
+  autoFocus,
+}: ChatInputProps) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
