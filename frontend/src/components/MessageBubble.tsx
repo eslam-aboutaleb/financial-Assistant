@@ -62,34 +62,38 @@ export default function MessageBubble({
       {!isUser && (
         <div
           id={`avatar-${message.id}`}
-          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${isError ? "bg-red-100" : "bg-ochre-100"}`}
+          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${isError ? "bg-insurance-error/10" : "bg-insurance-info/10"}`}
           data-testid={`avatar-${message.id}`}
         >
           {isError ? (
             <AlertCircle
-              className="w-4 h-4 text-red-700"
+              className="w-4 h-4 text-insurance-error"
               data-testid="error-icon"
             />
           ) : (
-            <Bot className="w-4 h-4 text-ochre-800" data-testid="bot-icon" />
+            <Bot
+              className="w-4 h-4 text-insurance-info"
+              data-testid="bot-icon"
+            />
           )}
         </div>
       )}
 
       <div
+        id={`message-content-${message.id}`}
         className={`flex flex-col ${isUser ? "items-end max-w-[78%]" : "items-start max-w-[92%]"}`}
         data-testid={`message-content-${message.id}`}
       >
         <div
           id={`message-bubble-${message.id}`}
           className={`text-[15px] leading-relaxed shadow-subtle group relative transition-colors duration-200
-              ${
-                isUser
-                  ? "px-4 py-3 bg-ochre-600 text-white rounded-3xl rounded-tr-sm hover:bg-ochre-700"
-                  : isError
-                    ? "px-4 py-3 bg-red-50 border border-red-200 text-red-900 rounded-2xl rounded-bl-sm"
-                    : "px-4 py-3.5 bg-warm-surface border border-warm-border text-warm-ink rounded-3xl rounded-bl-sm hover:border-ochre-200"
-              }`}
+            ${
+              isUser
+                ? "px-4 py-3 bg-insurance-info text-white rounded-2xl rounded-tr-sm"
+                : isError
+                  ? "px-4 py-3 bg-insurance-error/10 border border-insurance-error/20 text-insurance-ink rounded-2xl rounded-bl-sm"
+                  : "px-4 py-3.5 bg-insurance-surface border border-insurance-border text-insurance-ink rounded-2xl rounded-bl-sm hover:border-insurance-border-strong"
+            }`}
           data-testid={`message-bubble-${message.id}`}
         >
           {isUser ? (
@@ -103,7 +107,7 @@ export default function MessageBubble({
           ) : (
             <div
               id={`assistant-text-${message.id}`}
-              className="prose prose-slate max-w-none prose-p:my-2 prose-pre:my-0 prose-pre:p-0 prose-code:text-ochre-800 prose-code:bg-ochre-50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded"
+              className="prose prose-slate max-w-none prose-p:my-2 prose-pre:my-0 prose-pre:p-0 prose-code:text-insurance-ink prose-code:bg-insurance-surface-secondary prose-code:px-1 prose-code:py-0.5 prose-code:rounded"
               data-testid={`assistant-text-${message.id}`}
             >
               <ReactMarkdown
@@ -123,7 +127,7 @@ export default function MessageBubble({
                       </SyntaxHighlighter>
                     ) : (
                       <code
-                        className="bg-ochre-50 px-1.5 py-0.5 rounded text-[13px] font-mono"
+                        className="bg-insurance-surface-secondary px-1.5 py-0.5 rounded text-[13px] font-mono"
                         {...props}
                       >
                         {children}
@@ -142,13 +146,13 @@ export default function MessageBubble({
             <div className="absolute -top-3 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
               <button
                 onClick={handleCopy}
-                className="p-1.5 bg-warm-surface border border-warm-border rounded-lg shadow-soft hover:shadow-medium transition-all"
+                className="p-1.5 bg-insurance-surface border border-insurance-border rounded-lg shadow-soft hover:shadow-medium transition-all"
                 aria-label={copied ? "Copied" : "Copy message"}
               >
                 {copied ? (
-                  <Check className="w-3.5 h-3.5 text-green-700" />
+                  <Check className="w-3.5 h-3.5 text-insurance-success" />
                 ) : (
-                  <Copy className="w-3.5 h-3.5 text-warm-muted" />
+                  <Copy className="w-3.5 h-3.5 text-insurance-ink-secondary" />
                 )}
               </button>
             </div>
@@ -157,21 +161,23 @@ export default function MessageBubble({
             <div className="absolute -top-3 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
               <button
                 onClick={onRetry}
-                className="p-1.5 bg-warm-surface border border-warm-border rounded-lg shadow-soft hover:shadow-medium transition-all flex items-center gap-1"
+                className="p-1.5 bg-insurance-surface border border-insurance-border rounded-lg shadow-soft hover:shadow-medium transition-all flex items-center gap-1"
                 aria-label="Retry"
               >
-                <RefreshCw className="w-3.5 h-3.5 text-warm-muted" />
+                <RefreshCw className="w-3.5 h-3.5 text-insurance-ink-secondary" />
               </button>
             </div>
           )}
         </div>
 
         <div className="flex items-center gap-2 mt-1.5 px-1 opacity-70 group-hover:opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100">
-          <span className="text-[11px] text-warm-muted">
+          <span className="text-[11px] text-insurance-ink-tertiary">
             {formatTime(message.timestamp)}
           </span>
           {isError && (
-            <span className="text-[11px] text-red-600">Failed to send</span>
+            <span className="text-[11px] text-insurance-error">
+              Failed to send
+            </span>
           )}
         </div>
 
@@ -199,7 +205,7 @@ export default function MessageBubble({
       {isUser && (
         <div
           id={`user-avatar-${message.id}`}
-          className="w-8 h-8 rounded-full bg-ochre-600 text-white flex items-center justify-center flex-shrink-0 mt-0.5 shadow-subtle"
+          className="w-8 h-8 rounded-full bg-insurance-info text-white flex items-center justify-center flex-shrink-0 mt-0.5 shadow-subtle"
           data-testid={`user-avatar-${message.id}`}
         >
           <User className="w-4 h-4" data-testid="user-icon" />
