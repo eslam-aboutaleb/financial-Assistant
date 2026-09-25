@@ -28,7 +28,7 @@ import ChatInput from "./ChatInput";
 import { toast } from "react-hot-toast";
 import { useAuth } from "@/context/AuthContext";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { StopCircle, RefreshCw, ChevronDown, Plus } from "lucide-react";
+import { StopCircle, RefreshCw, ChevronDown, Shield } from "lucide-react";
 
 interface ChatWindowProps {
   /** Callback fired when the user starts a new chat. */
@@ -183,7 +183,7 @@ export default function ChatWindow({
   return (
     <div
       id="chat-window"
-      className="flex flex-col h-full bg-sand-50 relative"
+      className="flex flex-col h-full bg-insurance-bg relative"
       data-testid="chat-window"
       aria-label="Chat window"
     >
@@ -202,29 +202,17 @@ export default function ChatWindow({
             data-testid="empty-state"
           >
             <div className="mb-8">
-              <div className="w-[72px] h-[72px] rounded-2xl bg-warm-surface border border-warm-border flex items-center justify-center shadow-subtle mx-auto">
-                <svg
-                  className="w-8 h-8 text-ochre-700"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.8}
-                    d="M13 10V3L4 14h7v7l9-11h-7z"
-                  />
-                </svg>
+              <div className="w-[72px] h-[72px] rounded-2xl bg-insurance-surface border border-insurance-border flex items-center justifyight mx-auto">
+                <Shield className="w-8 h-8 text-insurance-info" />
               </div>
             </div>
             <div className="space-y-2 mb-10">
-              <h2 className="text-2xl font-semibold text-warm-ink tracking-tight">
-                Welcome to OmniCare Financial
+              <h2 className="text-2xl font-semibold text-insurance-ink tracking-tight">
+                Welcome to OmniCare
               </h2>
-              <p className="text-warm-muted max-w-sm leading-relaxed">
-                I can help you review policy coverage, check claim statuses, and
-                guide you through filing a new claim.
+              <p className="text-insurance-ink-secondary max-w-sm leading-relaxed">
+                Ask about your coverage, claims, policy details, or start a new
+                claim.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 justify-center max-w-3xl">
@@ -236,7 +224,7 @@ export default function ChatWindow({
                 <button
                   key={suggestion}
                   onClick={() => handleSendMessage(suggestion)}
-                  className="px-4 py-2.5 bg-warm-surface border border-warm-border rounded-xl text-sm font-medium text-warm-ink/80 hover:text-warm-ink hover:border-ochre-300 hover:shadow-soft hover:-translate-y-0.5 transition-all duration-200"
+                  className="px-4 py-2.5 bg-insurance-surface border border-insurance-border rounded-xl text-sm font-medium text-insurance-ink-secondary hover:text-insurance-ink hover:border-insurance-info/40 hover:shadow-soft hover:-translate-y-0.5 transition-all duration-200"
                 >
                   {suggestion}
                 </button>
@@ -259,29 +247,17 @@ export default function ChatWindow({
                 data-testid="loading-indicator"
                 aria-label="Assistant is typing"
               >
-                <div className="bg-warm-surface border border-warm-border rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-3 shadow-subtle">
-                  <div className="w-8 h-8 rounded-full bg-ochre-100 flex items-center justify-center flex-shrink-0">
-                    <svg
-                      className="w-4 h-4 text-ochre-700"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 10V3L4 14h7v7l9-11h-7z"
-                      />
-                    </svg>
+                <div className="bg-insurance-surface border border-insurance-border rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-3 shadow-subtle">
+                  <div className="w-8 h-8 rounded-full bg-insurance-info/10 flex items-center justify-center flex-shrink-0">
+                    <Shield className="w-4 h-4 text-insurance-info" />
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 bg-warm-stone rounded-full animate-typing-dot [animation-delay:-0.3s]"></div>
-                    <div className="w-2 h-2 bg-warm-stone rounded-full animate-typing-dot [animation-delay:-0.15s]"></div>
-                    <div className="w-2 h-2 bg-warm-stone rounded-full animate-typing-dot"></div>
+                    <div className="w-2 h-2 bg-insurance-ink-tertiary rounded-full animate-typing-dot [animation-delay:-0.3s]"></div>
+                    <div className="w-2 h-2 bg-insurance-ink-tertiary rounded-full animate-typing-dot [animation-delay:-0.15s]"></div>
+                    <div className="w-2 h-2 bg-insurance-ink-tertiary rounded-full animate-typing-dot"></div>
                   </div>
-                  <span className="text-xs text-warm-muted">
-                    OmniCare is thinking
+                  <span className="text-xs text-insurance-ink-secondary">
+                    OmniCare is checking your policy
                   </span>
                 </div>
               </div>
@@ -293,20 +269,20 @@ export default function ChatWindow({
       {showScrollButton && (
         <button
           onClick={() => scrollToBottom()}
-          className="absolute bottom-24 right-6 z-20 p-2 bg-warm-surface border border-warm-border rounded-full shadow-medium hover:shadow-lifted transition-all duration-200 hover:-translate-y-0.5"
+          className="absolute bottom-24 right-6 z-20 p-2 bg-insurance-surface border border-insurance-border rounded-full shadow-medium hover:shadow-lifted transition-all duration-200 hover:-translate-y-0.5"
           aria-label="Scroll to bottom"
         >
-          <ChevronDown className="w-4 h-4 text-warm-muted" />
+          <ChevronDown className="w-4 h-4 text-insurance-ink-secondary" />
         </button>
       )}
 
       <div
         id="input-container"
-        className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-sand-50 via-sand-50/95 to-transparent pt-10"
+        className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-insurance-bg via-insurance-bg/95 to-transparent pt-10"
         data-testid="input-container"
       >
         {isReadOnly ? (
-          <div className="text-center p-4 text-warm-muted bg-warm-surface border border-warm-border rounded-xl max-w-3xl mx-auto flex items-center justify-center gap-2">
+          <div className="text-center p-4 text-insurance-ink-secondary bg-insurance-surface border border-insurance-border rounded-xl max-w-3xl mx-auto flex items-center justify-center gap-2">
             <svg
               className="w-4 h-4"
               fill="none"
@@ -332,15 +308,15 @@ export default function ChatWindow({
               isLoading={chatMutation.isPending}
             />
             <div className="flex items-center justify-between mt-2.5 px-1">
-              <div className="text-center text-[11px] text-warm-muted flex-1">
-                OmniCare Assistant can make mistakes. Consider verifying
-                important information.
+              <div className="text-center text-[11px] text-insurance-ink-tertiary flex-1">
+                AI-generated information. Verify important coverage and claim
+                details against your policy or insurer.
               </div>
               <div className="flex items-center gap-3">
                 {chatMutation.isPending && (
                   <button
                     onClick={handleStopGeneration}
-                    className="flex items-center gap-1.5 text-xs text-red-700 hover:text-red-800 transition-colors"
+                    className="flex items-center gap-1.5 text-xs text-insurance-error hover:text-insurance-ink transition-colors"
                     aria-label="Stop generating"
                   >
                     <StopCircle className="w-3.5 h-3.5" />
@@ -350,7 +326,7 @@ export default function ChatWindow({
                 {!chatMutation.isPending && hasError && (
                   <button
                     onClick={handleRetryLast}
-                    className="flex items-center gap-1.5 text-xs text-ochre-700 hover:text-ochre-800 transition-colors"
+                    className="flex items-center gap-1.5 text-xs text-insurance-info hover:text-insurance-ink transition-colors"
                     aria-label="Retry last message"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />

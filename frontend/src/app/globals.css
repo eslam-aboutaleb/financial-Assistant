@@ -4,15 +4,32 @@
 
 @layer base {
   body {
-    @apply bg-sand-50 text-warm-ink antialiased;
+    @apply bg-insurance-bg text-insurance-ink antialiased;
   }
 
   :root {
     --font-inter: "Inter", system-ui, sans-serif;
+    --color-primary: #b87318;
+    --color-primary-dark: #8a5310;
+    --color-bg: #faf9f6;
+    --color-surface: #ffffff;
+    --color-surface-secondary: #f5f2ec;
+    --color-text: #24211e;
+    --color-text-secondary: #6f6a63;
+    --color-text-tertiary: #858078;
+    --color-border: #e5e0d9;
+    --color-border-strong: #d7d0c7;
+    --color-success: #2f7d5a;
+    --color-warning: #b87a2a;
+    --color-error: #b94a48;
+    --color-info: #456b9c;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
   }
 
   ::selection {
-    @apply bg-ochre-200 text-ochre-900;
+    @apply bg-insurance-border text-insurance-ink;
   }
 }
 
@@ -27,12 +44,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-sand-300 rounded-full hover:bg-sand-400 transition-colors;
+    @apply bg-insurance-border-strong rounded-full hover:bg-insurance-ink-tertiary transition-colors;
   }
 
   /* Focus */
   *:focus-visible {
-    @apply outline-none ring-2 ring-ochre-500/30 ring-offset-2 ring-offset-sand-50 rounded-md;
+    @apply outline-none ring-2 ring-insurance-info/30 ring-offset-2 ring-offset-insurance-bg rounded-md;
   }
 
   /* Entrance */
@@ -47,7 +64,7 @@
 
   /* Prose typography tuning */
   .prose {
-    @apply text-[15px] leading-relaxed text-warm-ink;
+    @apply text-[15px] leading-relaxed text-insurance-ink;
   }
   .prose p {
     @apply my-2;
@@ -65,7 +82,7 @@
   .prose h2,
   .prose h3,
   .prose h4 {
-    @apply font-semibold text-warm-ink tracking-tight;
+    @apply font-semibold text-insurance-ink tracking-tight;
   }
   .prose h1 {
     @apply text-xl;
@@ -84,19 +101,19 @@
     @apply mb-1;
   }
   .prose blockquote {
-    @apply border-l-4 border-ochre-200 pl-4 italic text-warm-muted;
+    @apply border-l-4 border-insurance-border pl-4 italic text-insurance-ink-secondary;
   }
   .prose a {
-    @apply text-ochre-700 underline underline-offset-2 hover:text-ochre-800;
+    @apply text-insurance-info underline underline-offset-2 hover:text-insurance-ink;
   }
   .prose table {
     @apply w-full border-collapse;
   }
   .prose th,
   .prose td {
-    @apply border border-warm-border px-3 py-2 text-left;
+    @apply border border-insurance-border px-3 py-2 text-left;
   }
   .prose th {
-    @apply bg-sand-50 font-medium;
+    @apply bg-insurance-bg font-medium;
   }
 }
