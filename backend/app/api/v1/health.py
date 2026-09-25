@@ -5,11 +5,12 @@ GET /api/v1/health - Evaluates and returns service operational status.
 
 import logging
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
 
 from app.schemas.models import HealthResponse
-from app.database import async_session_factory
+from app.database import async_session_factory, get_db
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
