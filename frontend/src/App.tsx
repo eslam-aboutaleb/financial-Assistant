@@ -17,7 +17,6 @@
  *     the Sidebar's React Query to refetch the conversation list.
  */
 
-"use client";
 
 import { useState, useRef } from "react";
 import Sidebar from "@/components/Sidebar";
