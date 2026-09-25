@@ -100,8 +100,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      # Runtime environment variable for the frontend.
-      # Must match the build arg VITE_API_URL for consistency.
+      - HOST=0.0.0.0
       - VITE_API_URL=http://localhost:8000
     depends_on:
       # Wait for the backend to be healthy before starting the frontend.

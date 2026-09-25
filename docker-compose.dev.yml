@@ -61,6 +61,9 @@ services:
       # Mount the app directory for live code reloading.
       # Changes to Python files trigger automatic Uvicorn restart.
       - ./backend/app:/app/app
+      # Mount alembic migrations and config for database version control.
+      - ./backend/alembic.ini:/app/alembic.ini
+      - ./backend/alembic:/app/alembic
       # Persist ChromaDB vector store data.
       - chroma_data_dev:/app/data/chroma_db
     depends_on:
@@ -88,6 +91,7 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - HOST=0.0.0.0
       - VITE_API_URL=http://localhost:8000
     volumes:
       # Mount the full frontend directory for live code reloading.
