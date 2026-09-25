@@ -7,7 +7,7 @@ from datetime import datetime
 Pydantic models for API request/response schemas, error envelopes, and data validation.
 """
 
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -104,10 +104,9 @@ class ClaimSubmission(BaseModel):
         description="Policy number associated with the policyholder (e.g., POL-1092)",
         min_length=1,
     )
-    claim_type: str = Field(
+    claim_type: Literal["Water Damage", "Personal Property"] = Field(
         ...,
-        description="Category/type of insurance claim (e.g., Water Damage, Personal Property)",
-        min_length=1,
+        description="Category/type of insurance claim. Must be exactly 'Water Damage' or 'Personal Property'.",
     )
     amount: float = Field(
         ...,

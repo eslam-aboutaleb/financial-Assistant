@@ -19,9 +19,11 @@ from app.schemas.models import ClaimSubmission
 logger = logging.getLogger(__name__)
 
 
+from typing import Literal
+
 async def submit_claim(
     policy_number: str,
-    claim_type: str,
+    claim_type: Literal["Water Damage", "Personal Property"],
     amount: float,
     description: str,
 ) -> dict[str, Any]:
