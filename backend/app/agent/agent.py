@@ -29,7 +29,6 @@ from app.agent.prompts import SYSTEM_INSTRUCTION
 from app.agent.tools.policy_rag import query_policy
 from app.agent.tools.claim_status import get_claim_status
 from app.agent.tools.submit_claim import submit_claim
-from app.agent.tools.user_policy import get_user_policies
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -61,9 +60,9 @@ omnicare_agent = LlmAgent(
     instruction=SYSTEM_INSTRUCTION,
     description=(
         "OmniCare Financial customer service assistant that handles "
-        "policy questions, claim lookups, claim submissions, and user policy lookups."
+        "policy questions, claim lookups, and claim submissions."
     ),
-    tools=[query_policy, get_claim_status, submit_claim, get_user_policies],
+    tools=[query_policy, get_claim_status, submit_claim],
 )
 
 # --- Session & Runner Setup ----------------------------------------
