@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 Request idempotency cache for the OmniCare chat endpoint.
 
@@ -21,10 +19,14 @@ Design:
 - Thread-safe for async use (single event-loop, no cross-thread mutations).
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
+from functools import wraps
 import hashlib
 import logging
 import time
-from typing import Any
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -124,10 +126,6 @@ def clear_cache() -> None:
     """
     _cache.clear()
 
-
-from functools import wraps
-from typing import TypeVar
-from collections.abc import Callable
 
 F = TypeVar("F", bound=Callable[..., Any])
 

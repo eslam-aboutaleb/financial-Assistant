@@ -100,7 +100,7 @@ class TestClaimIDOR:
         mock_session.add = MagicMock()
         with (
             patch("app.agent.tools.submit_claim.async_session_factory") as mock_factory,
-            patch("app.rag.claims_rag.ingest_claim_sync"),
+            patch("app.rag.claims_rag.ingest_claim"),
         ):
             mock_factory.return_value.__aenter__.return_value = mock_session
             result = await submit_claim(

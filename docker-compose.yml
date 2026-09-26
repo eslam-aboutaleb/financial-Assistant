@@ -11,7 +11,6 @@
 #   The frontend accesses the backend through VITE_API_URL (http://localhost:8000).
 #
 # Volumes:
-#   chroma_data - Persistent ChromaDB vector store for policy embeddings.
 #   pg_data     - Persistent PostgreSQL data directory.
 #
 # Health Checks:
@@ -27,7 +26,7 @@ services:
   # PostgreSQL 16 on Alpine Linux for minimal image size.
   # Stores all persistent data: users, claims, conversations, and policy chunks.
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: omnicare-db
     restart: unless-stopped
     environment:
@@ -52,7 +51,7 @@ services:
   # ============================================================================
   # Backend Service
   # ============================================================================
-  # FastAPI backend with Google ADK agent, LiteLLM routing, ChromaDB RAG,
+  # FastAPI backend with Google ADK agent, LiteLLM routing, pgvector RAG,
   # and PostgreSQL persistence. Policy ingestion runs automatically on startup.
   backend:
     build:
@@ -66,9 +65,6 @@ services:
       # Load environment variables from the root .env file.
       # Required variables: OPENAI_API_KEY, DATABASE_URL, POSTGRES_PASSWORD.
       - .env
-    volumes:
-      # Persist ChromaDB vector store across container restarts.
-      - chroma_data:/app/app/data/chroma_db
     depends_on:
       # Wait for the database to be healthy before starting the backend.
       db:
@@ -115,9 +111,6 @@ services:
 # Driver is local (default), storing data on the host filesystem.
 
 volumes:
-  chroma_data:
-    name: omnicare_chroma_data
-    driver: local
   pg_data:
     name: omnicare_pg_data
     driver: local

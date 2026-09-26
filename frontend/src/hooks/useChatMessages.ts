@@ -11,7 +11,11 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Message } from "@/types/chat";
-import { sendMessage, resetChat as apiResetChat, getConversationHistory } from "@/lib/api";
+import {
+  sendMessage,
+  resetChat as apiResetChat,
+  getConversationHistory,
+} from "@/lib/api";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
 
@@ -29,7 +33,7 @@ export function useChatMessages({
   onAuthError?: () => void;
 }) {
   const { token } = useAuth();
-  
+
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -51,14 +55,23 @@ export function useChatMessages({
     if (historyData?.messages) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessages(
-        historyData.messages.map((m: { id?: string; role: Message["role"]; content: string; timestamp?: string; sources?: string[]; tool_calls?: Message["toolCalls"] }) => ({
-          id: m.id || Date.now().toString(),
-          role: m.role,
-          content: m.content,
-          timestamp: new Date(m.timestamp || Date.now()),
-          sources: m.sources,
-          toolCalls: m.tool_calls,
-        })) satisfies Message[],
+        historyData.messages.map(
+          (m: {
+            id?: string;
+            role: Message["role"];
+            content: string;
+            timestamp?: string;
+            sources?: string[];
+            tool_calls?: Message["toolCalls"];
+          }) => ({
+            id: m.id || Date.now().toString(),
+            role: m.role,
+            content: m.content,
+            timestamp: new Date(m.timestamp || Date.now()),
+            sources: m.sources,
+            toolCalls: m.tool_calls,
+          }),
+        ) satisfies Message[],
       );
     }
   }, [historyData]);
@@ -80,14 +93,18 @@ export function useChatMessages({
       if (onMessageSent) onMessageSent();
     },
     onError: (error: Error) => {
-      if (error.message.includes("Session expired") || error.message.includes("Sign in to continue")) {
+      if (
+        error.message.includes("Session expired") ||
+        error.message.includes("Sign in to continue")
+      ) {
         onAuthError?.();
       }
 
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "error",
-        content: error.message || "Something went wrong. Please try again later.",
+        content:
+          error.message || "Something went wrong. Please try again later.",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -166,7 +183,9 @@ export function useChatMessages({
   }, [chatMutation]);
 
   const handleRetryLast = useCallback(() => {
-    const lastUserMessageIndex = [...messages].reverse().findIndex((m) => m.role === "user");
+    const lastUserMessageIndex = [...messages]
+      .reverse()
+      .findIndex((m) => m.role === "user");
     if (lastUserMessageIndex !== -1) {
       const actualIndex = messages.length - 1 - lastUserMessageIndex;
       setMessages((prev) => prev.slice(0, actualIndex + 1));

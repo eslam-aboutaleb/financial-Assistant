@@ -36,7 +36,7 @@ def test_jwt_secret_key_validation():
     with pytest.raises(ValidationError) as exc_info:
         Settings(
             environment="production",
-            jwt_secret_key="super-secret-key-for-development-only-change-me",
+            jwt_secret_key="super-secret-key-for-development-only-change-me",  # noqa: S106
         )
     assert "JWT_SECRET_KEY must be set to a secure random value in production" in str(
         exc_info.value

@@ -6,7 +6,7 @@ Welcome to the backend service of **OmniCare Financial**, an enterprise-grade AI
 
 ## 1. System Architecture Overview
 
-The backend is built with Python 3.11+ using an asynchronous, modular architecture powered by **FastAPI**, **Google ADK (Agent Development Kit)**, **LiteLLM**, and **ChromaDB**.
+The backend is built with Python 3.11+ using an asynchronous, modular architecture powered by **FastAPI**, **Google ADK (Agent Development Kit)**, **LiteLLM**, and **pgvector**.
 
 ### High-Level Architectural Layers
 
@@ -16,7 +16,7 @@ graph TD
 
     subgraph FastAPI_Service["FastAPI Application (Port 8000)"]
         CORS["CORS Middleware<br/>(Dynamic Origin Whitelist)"]
-        Lifespan["Application Lifespan<br/>(Chroma Pre-Indexing & Health Checks)"]
+        Lifespan["Application Lifespan<br/>(pgvector Pre-Indexing & Health Checks)"]
         Router["API Router (/api/v1)"]
 
         subgraph Endpoints["v1 Endpoints"]
@@ -35,13 +35,13 @@ graph TD
     end
 
     subgraph Tools_Layer["Agent Tool Registry"]
-        ToolRAG["query_policy<br/>(ChromaDB Semantic Search)"]
+        ToolRAG["query_policy<br/>(pgvector Hybrid Search)"]
         ToolStatus["get_claim_status<br/>(Claims Lookup)"]
         ToolSubmit["submit_claim<br/>(Pydantic Validation & Persistence)"]
     end
 
     subgraph Storage_Layer["Datastores & External Services"]
-        ChromaStore[("ChromaDB Vector Store<br/>OpenAI Embedding API")]
+        PgVectorStore[("pgvector / PostgreSQL<br/>Hybrid Vector + BM25 Search")]
         PolicyDoc[("Source Policy<br/>sample_policy.md")]
         LLMProvider[("LLM Provider<br/>OpenAI / Anthropic / Gemini")]
     end
@@ -60,11 +60,11 @@ graph TD
     LlmAgent -.->|Tool Call| ToolStatus
     LlmAgent -.->|Tool Call| ToolSubmit
 
-    ToolRAG --> ChromaStore
+    ToolRAG --> PgVectorStore
     ToolStatus --> ClaimsDB
     ToolSubmit --> ClaimsDB
     Lifespan -.->|Chunk & Ingest| PolicyDoc
-    Lifespan -.->|Persist Embeddings| ChromaStore
+    Lifespan -.->|Persist Embeddings| PgVectorStore
 ```
 
 ### Component Responsibilities
@@ -77,7 +77,7 @@ graph TD
 | **Data Schemas**            | [`app/schemas/models.py`](file:///Users/eslamaboutaleb/Documents/omnicare-financial/backend/app/schemas/models.py) | Pydantic request, response, error envelopes, and tool data models.                                                                  |
 | **Agent Core**              | [`app/agent/agent.py`](file:///Users/eslamaboutaleb/Documents/omnicare-financial/backend/app/agent/agent.py)       | Sets up Google ADK `LlmAgent`, `Runner`, session handling, event streaming, and tool resolution.                                    |
 | **System Prompts & Safety** | [`app/agent/prompts.py`](file:///Users/eslamaboutaleb/Documents/omnicare-financial/backend/app/agent/prompts.py)   | System instructions, tool usage rules, grounding requirements, and prompt-injection defense mechanisms.                             |
-| **RAG Engine**              | [`app/rag/`](file:///Users/eslamaboutaleb/Documents/omnicare-financial/backend/app/rag)                            | Markdown document chunking (`ingest.py`), OpenAI embeddings (`OpenAIEmbeddingFunction`), and vector retrieval (`retriever.py`).        |
+| **RAG Engine**              | [`app/rag/`](file:///Users/eslamaboutaleb/Documents/omnicare-financial/backend/app/rag)                            | Markdown document chunking (`ingest.py`), LiteLLM embeddings (`LitellmEmbeddingFunction`), and hybrid vector retrieval (`retriever.py`).        |
 | **Agent Tools**             | [`app/agent/tools/`](file:///Users/eslamaboutaleb/Documents/omnicare-financial/backend/app/agent/tools)            | Domain functions executable by the agent: policy lookup, claim status retrieval, and validated claim filing.                        |
 
 ---
@@ -251,9 +251,7 @@ Configuration is strictly centralized in [`app/config.py`](file:///Users/eslamab
 | `OPENAI_API_KEY`         | `str`       | `""`                             | Valid secret key string                                | OpenAI API key utilized by LiteLLM.                           |
 | `OPENAI_API_BASE`        | `str`       | `""`                             | Valid URL or empty string                              | Optional OpenAI API base URL override for LiteLLM.            |
 | `LLM_MODEL`              | `str`       | `openai/gpt-4o-mini`             | `provider/model_name` string                           | Model routed via LiteLLM.                                     |
-| `CHROMA_DB_PATH`         | `str`       | `./app/data/chroma_db`           | Valid directory path                                   | Storage location for persistent vector database.              |
-| `CHROMA_COLLECTION_NAME` | `str`       | `omnicare_policies`              | Alphanumeric string                                    | ChromaDB collection identifier.                               |
-| `EMBEDDING_MODEL`        | `str`       | `text-embedding-3-small`          | Pretrained model identifier                            | OpenAI embedding model name used by ChromaDB.                 |
+| `EMBEDDING_MODEL`        | `str`       | `text-embedding-3-small`          | Pretrained model identifier                            | Embedding model name used by LiteLLM for pgvector.            |
 | `POLICY_FILE_PATH`       | `str`       | `./app/data/sample_policy.md`    | Valid file path                                        | Source policy document for RAG ingestion.                     |
 
 FastAPI endpoints consume settings through `Depends(get_settings)`:
@@ -347,7 +345,7 @@ pytest tests/test_claim_status.py -v
 #### Test Architecture & Isolation
 
 - **Mock LLM Execution**: `test_chat.py` mocks `run_agent` to ensure tests execute offline, deterministically, and with zero external API costs.
-- **In-Memory Chroma Fixture**: Retrieval tests utilize an isolated, temporary Chroma persistent directory.
+- **In-Memory Fixture**: Retrieval tests utilize an isolated, temporary Postgres persistent directory.
 
 ---
 

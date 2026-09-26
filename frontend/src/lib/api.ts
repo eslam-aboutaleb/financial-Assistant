@@ -116,9 +116,10 @@ export async function resetChat(token: string | null): Promise<void> {
 export async function getConversations(token: string) {
   const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const response = await fetch(`${apiUrl}/api/v1/chat/conversations`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
-  if (!response.ok) throw new Error("Something went wrong. Please try again later.");
+  if (!response.ok)
+    throw new Error("Something went wrong. Please try again later.");
   return response.json();
 }
 
@@ -133,16 +134,17 @@ export async function getConversations(token: string) {
 export async function getConversationHistory(token: string, id: string) {
   const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const response = await fetch(`${apiUrl}/api/v1/chat/conversations/${id}`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
   });
-  if (!response.ok) throw new Error("Something went wrong. Please try again later.");
+  if (!response.ok)
+    throw new Error("Something went wrong. Please try again later.");
   return response.json();
 }
 
 export async function streamMessage(
   token: string | null,
   message: string,
-  onChunk: (eventData: ADKSSEEvent) => void
+  onChunk: (eventData: ADKSSEEvent) => void,
 ): Promise<void> {
   const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const idempotencyKey = generateIdempotencyKey();
@@ -162,7 +164,8 @@ export async function streamMessage(
     let errorMessage = "Something went wrong. Please try again later.";
     try {
       const errorData = await response.json();
-      errorMessage = errorData.detail || errorData.error?.message || errorMessage;
+      errorMessage =
+        errorData.detail || errorData.error?.message || errorMessage;
     } catch {
       // ignore JSON error
     }
@@ -185,14 +188,14 @@ export async function streamMessage(
     const { done, value } = await reader.read();
     isDone = done;
     if (done) break;
-    
+
     buffer += decoder.decode(value, { stream: true });
-    
+
     let boundary = buffer.indexOf("\n\n");
     while (boundary !== -1) {
       const chunk = buffer.slice(0, boundary);
       buffer = buffer.slice(boundary + 2);
-      
+
       if (chunk.startsWith("data: ")) {
         try {
           const data = JSON.parse(chunk.slice(6));
@@ -201,7 +204,7 @@ export async function streamMessage(
           console.error("Error parsing SSE chunk:", e);
         }
       }
-      
+
       boundary = buffer.indexOf("\n\n");
     }
   }

@@ -144,7 +144,11 @@ export default function Sidebar({
               }`}
             >
               <MessageSquare
-                className={`w-4 h-4 flex-shrink-0 transition-colors ${isActive ? "text-insurance-info" : "text-insurance-ink-tertiary group-hover:text-insurance-info"}`}
+                className={`w-4 h-4 flex-shrink-0 transition-colors ${
+                  isActive
+                    ? "text-insurance-info"
+                    : "text-insurance-ink-tertiary group-hover:text-insurance-info"
+                }`}
               />
               <div className="flex-1 min-w-0">
                 <div className="truncate">{chat.title}</div>

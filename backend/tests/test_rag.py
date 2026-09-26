@@ -1,119 +1,234 @@
 """
-Direct unit and integration tests for the RAG ingestion and retrieval modules.
-
-Tests:
-- test_ingest_creates_collection: Call ingest_policy with a temp directory, verify collection exists
-- test_retrieve_water_damage_query: Ingest the sample policy, query 'water damage coverage',
-  verify results contain relevant text about pipe bursts and $25,000
-- test_retrieve_personal_property_query: Query 'electronics coverage', verify results
-  mention $10,000 and personal property
-- test_retrieve_returns_metadata: Verify results include section metadata
-- test_retrieve_result_count: Query with n_results=1 returns exactly 1 result
-
-Runs against real Chroma and real embeddings via sentence-transformers.
+Unit tests for the RAG ingestion and hybrid retrieval modules using the vector store abstraction.
 """
 
+import uuid
 import pytest
-import chromadb
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.config import settings
-from app.rag.ingest import ingest_policy
-from app.rag.retriever import retrieve
-
-
-@pytest.fixture(scope="module")
-def rag_chroma_dir(tmp_path_factory):
-    """
-    Module-scoped temporary Chroma directory with pre-ingested sample policy.
-    Reused across retrieval tests for performance while maintaining test isolation.
-    """
-    temp_dir = str(tmp_path_factory.mktemp("rag_policy_chroma"))
-    count = ingest_policy(chroma_path=temp_dir)
-    assert count > 0, "Failed to ingest chunks into module-scoped Chroma store"
-    return temp_dir
+from app.rag.ingest import chunk_policy_document, ingest_policy
+from app.rag.retriever import retrieve_hybrid
+from app.rag.claims_rag import retrieve_claims_hybrid, ingest_claim, ingest_all_claims
+from app.rag.embedding import EmbeddingFactory, LitellmEmbeddingFunction
 
 
-def test_ingest_creates_collection(tmp_path):
-    """
-    Test that calling ingest_policy with a fresh temporary directory
-    creates the collection and populates it with document chunks.
-    """
-    temp_chroma = str(tmp_path / "new_chroma")
-    count = ingest_policy(chroma_path=temp_chroma)
-
-    assert count > 0, f"Expected count > 0 from ingest_policy, got {count}"
-
-    # Verify directly via Chroma client that collection exists and has documents
-    client = chromadb.PersistentClient(path=temp_chroma)
-    collections = client.list_collections()
-    collection_names = [col.name if hasattr(col, "name") else str(col) for col in collections]
-
-    assert (
-        settings.chroma_collection_name in collection_names
-    ), f"Collection '{settings.chroma_collection_name}' not found in Chroma. Existing: {collection_names}"
-
-    col = client.get_collection(name=settings.chroma_collection_name)
-    assert col.count() == count, f"Expected {count} items in collection, found {col.count()}"
+def test_chunk_policy_document(tmp_path):
+    md_file = tmp_path / "test.md"
+    md_file.write_text(
+        "## Section 1\n\nThis is a test policy.\n\n## Section 2\n\nAnother section.",
+        encoding="utf-8",
+    )
+    chunks = chunk_policy_document(str(md_file))
+    assert len(chunks) >= 2
+    assert chunks[0]["metadata"]["section"] == "Section 1"
+    assert "test policy" in chunks[0]["text"].lower()
 
 
-def test_retrieve_water_damage_query(rag_chroma_dir):
-    """
-    Test semantic retrieval for 'water damage coverage'.
-    Verifies that the retrieved chunks contain relevant terms:
-    'pipe bursts' and '$25,000'.
-    """
-    results = retrieve(query="water damage coverage", chroma_path=rag_chroma_dir)
+@pytest.mark.asyncio
+async def test_retrieve_hybrid_exception():
+    with patch("app.rag.retriever.get_vector_store") as mock_factory:
+        mock_store = AsyncMock()
+        mock_factory.return_value = mock_store
+        mock_store.hybrid_search.side_effect = Exception("DB error")
 
-    assert len(results) > 0, "No results returned for water damage query"
-
-    combined_text = " ".join(r["document"] for r in results)
-    assert (
-        "pipe bursts" in combined_text.lower()
-    ), f"Expected 'pipe bursts' in retrieved text. Retrieved: {combined_text}"
-    assert (
-        "$25,000" in combined_text
-    ), f"Expected '$25,000' in retrieved text. Retrieved: {combined_text}"
+        with patch("app.rag.retriever.EmbeddingFactory.get_embedding_function") as mock_embed:
+            mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+            res = await retrieve_hybrid("test")
+            assert res == []
 
 
-def test_retrieve_personal_property_query(rag_chroma_dir):
-    """
-    Test semantic retrieval for 'electronics coverage'.
-    Verifies that the results mention '$10,000' and 'personal property'.
-    """
-    results = retrieve(query="electronics coverage", chroma_path=rag_chroma_dir)
+@pytest.mark.asyncio
+async def test_retrieve_hybrid_success():
+    mock_store = AsyncMock()
+    mock_store.hybrid_search.return_value = [
+        {
+            "document": "mock document",
+            "metadata": {
+                "section": "Mock Section",
+                "source": "mock.md",
+                "chunk_index": 0,
+                "sub_chunk_index": 0,
+            },
+            "distance": 0.5,
+            "_rrf_score": 0.8,
+        }
+    ]
 
-    assert len(results) > 0, "No results returned for electronics coverage query"
-
-    combined_text = " ".join(r["document"] for r in results)
-    assert (
-        "$10,000" in combined_text
-    ), f"Expected '$10,000' in retrieved text. Retrieved: {combined_text}"
-    assert (
-        "personal property" in combined_text.lower()
-    ), f"Expected 'personal property' in retrieved text. Retrieved: {combined_text}"
-
-
-def test_retrieve_returns_metadata(rag_chroma_dir):
-    """
-    Test that retrieval results include section metadata with required keys.
-    """
-    results = retrieve(query="water damage coverage", chroma_path=rag_chroma_dir)
-
-    assert len(results) > 0, "No results returned to verify metadata"
-
-    for r in results:
-        assert "metadata" in r, f"Result missing 'metadata' field: {r}"
-        metadata = r["metadata"]
-        assert "section" in metadata, f"Metadata missing 'section': {metadata}"
-        assert metadata["section"], "Metadata 'section' should not be empty"
-        assert "source" in metadata, f"Metadata missing 'source': {metadata}"
+    with (
+        patch("app.rag.retriever.get_vector_store", return_value=mock_store),
+        patch("app.rag.retriever.EmbeddingFactory.get_embedding_function") as mock_embed,
+    ):
+        mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+        res = await retrieve_hybrid("test")
+        assert len(res) == 1
+        assert res[0]["document"] == "mock document"
+        assert res[0]["distance"] == 0.5
 
 
-def test_retrieve_result_count(rag_chroma_dir):
-    """
-    Test that retrieve respects the n_results parameter.
-    Querying with n_results=1 must return exactly 1 result.
-    """
-    results = retrieve(query="insurance policy coverage", n_results=1, chroma_path=rag_chroma_dir)
+def test_embedding_factory():
+    fn = EmbeddingFactory.get_embedding_function()
+    assert isinstance(fn, LitellmEmbeddingFunction)
+    res = fn(["test 1", "test 2"])
+    assert len(res) == 2
+    assert len(res[0]) == 1536
 
-    assert len(results) == 1, f"Expected exactly 1 result when n_results=1, got {len(results)}"
+
+def test_embedding_function_embed_query():
+    fn = EmbeddingFactory.get_embedding_function()
+    result = fn.embed_query("test query")
+    assert len(result) == 1536
+
+
+def test_embedding_function_embed_documents():
+    fn = EmbeddingFactory.get_embedding_function()
+    result = fn.embed_documents(["doc1", "doc2"])
+    assert len(result) == 2
+    assert len(result[0]) == 1536
+
+
+@pytest.mark.asyncio
+async def test_ingest_policy_skip_if_exists():
+    mock_store = AsyncMock()
+    mock_store.count.return_value = 10
+
+    with patch("app.rag.ingest.get_vector_store", return_value=mock_store):
+        count = await ingest_policy()
+        assert count == 10
+        mock_store.count.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ingest_policy_no_chunks():
+    mock_store = AsyncMock()
+    mock_store.count.return_value = 0
+
+    with (
+        patch("app.rag.ingest.get_vector_store", return_value=mock_store),
+        patch("app.rag.ingest.chunk_policy_document", return_value=[]),
+    ):
+        count = await ingest_policy()
+        assert count == 0
+        mock_store.count.assert_called_once()
+        mock_store.upsert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ingest_policy_success():
+    chunks = [
+        {
+            "id": "chunk_1",
+            "text": "test policy text",
+            "metadata": {
+                "section": "Test",
+                "source": "test.md",
+                "chunk_index": 0,
+                "sub_chunk_index": 0,
+            },
+        }
+    ]
+    mock_store = AsyncMock()
+    mock_store.count.return_value = 0
+
+    with (
+        patch("app.rag.ingest.get_vector_store", return_value=mock_store),
+        patch("app.rag.ingest.chunk_policy_document", return_value=chunks),
+        patch("app.rag.ingest.EmbeddingFactory.get_embedding_function") as mock_embed,
+    ):
+        mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+        count = await ingest_policy()
+        assert count == len(chunks)
+        mock_store.upsert.assert_called_once()
+
+
+# Claims RAG tests
+
+
+@pytest.mark.asyncio
+async def test_claims_rag_hybrid():
+    test_user_id = uuid.uuid4()
+
+    mock_store = AsyncMock()
+    mock_store.hybrid_search.return_value = [
+        {
+            "document": "Claim TEST-123: Water Damage - Pipe burst",
+            "metadata": {
+                "claim_id": "TEST-123",
+                "policy_number": "POL-123",
+                "claim_type": "Water Damage",
+                "status": "Pending",
+                "amount": 1500.0,
+            },
+            "distance": 0.5,
+            "_rrf_score": 0.8,
+        }
+    ]
+
+    with (
+        patch("app.rag.claims_rag.get_vector_store", return_value=mock_store),
+        patch("app.rag.claims_rag.EmbeddingFactory.get_embedding_function") as mock_embed,
+    ):
+        mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+        results = await retrieve_claims_hybrid("kitchen pipe", test_user_id)
+        assert len(results) > 0
+        assert results[0]["metadata"]["claim_id"] == "TEST-123"
+        mock_store.hybrid_search.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_claims_rag_exception_handling():
+    test_user_id = uuid.uuid4()
+
+    with patch("app.rag.claims_rag.get_vector_store") as mock_factory:
+        mock_store = AsyncMock()
+        mock_factory.return_value = mock_store
+        mock_store.hybrid_search.side_effect = Exception("DB error")
+
+        with patch("app.rag.claims_rag.EmbeddingFactory.get_embedding_function") as mock_embed:
+            mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+            error_results = await retrieve_claims_hybrid("kitchen", test_user_id)
+            assert error_results == []
+
+
+@pytest.mark.asyncio
+async def test_ingest_claim():
+    test_user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    mock_store = AsyncMock()
+
+    with (
+        patch("app.rag.claims_rag.get_vector_store", return_value=mock_store),
+        patch("app.rag.claims_rag.EmbeddingFactory.get_embedding_function") as mock_embed,
+    ):
+        mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+        await ingest_claim(
+            claim_id="CLM-1",
+            owner_id=test_user_id,
+            claim_type="Water",
+            description="Pipe burst",
+            policy_number="POL-1",
+            status="Open",
+            amount=1000.0,
+        )
+        mock_store.upsert.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ingest_all_claims():
+    mock_claim = MagicMock()
+    mock_claim.claim_id = "CLM-1"
+    mock_claim.owner_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    mock_claim.claim_type = "Water"
+    mock_claim.description = "Pipe burst"
+    mock_claim.policy_number = "POL-1"
+    mock_claim.status = "Open"
+    mock_claim.amount = 1000.0
+
+    with patch("app.rag.claims_rag.async_session_factory") as mock_factory:
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.all.return_value = [mock_claim]
+        mock_session.execute.return_value = mock_result
+        mock_factory.return_value.__aenter__.return_value = mock_session
+
+        with patch("app.rag.claims_rag.ingest_claim", new_callable=AsyncMock) as mock_ingest:
+            await ingest_all_claims()
+            mock_ingest.assert_called_once()

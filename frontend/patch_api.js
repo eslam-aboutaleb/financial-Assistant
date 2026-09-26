@@ -1,5 +1,5 @@
-const fs = require('fs');
-let code = fs.readFileSync('src/lib/api.ts', 'utf8');
+const fs = require("fs");
+let code = fs.readFileSync("src/lib/api.ts", "utf8");
 
 const newFunc = `
 export async function streamMessage(
@@ -63,5 +63,5 @@ export async function streamMessage(
 `;
 
 if (!code.includes("streamMessage")) {
-  fs.writeFileSync('src/lib/api.ts', code + newFunc);
+  fs.writeFileSync("src/lib/api.ts", code + newFunc);
 }

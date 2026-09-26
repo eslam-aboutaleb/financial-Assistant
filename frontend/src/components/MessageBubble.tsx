@@ -15,7 +15,16 @@
 
 import { useState } from "react";
 import { Message } from "@/types/chat";
-import { Bot, User, AlertCircle, Copy, Check, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  Bot,
+  User,
+  AlertCircle,
+  Copy,
+  Check,
+  RefreshCw,
+  ChevronDown,
+  ChevronRight,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -56,14 +65,20 @@ export default function MessageBubble({
   return (
     <div
       id={`message-${message.id}`}
-      className={`flex w-full gap-3 ${isUser ? "justify-end" : "justify-start"} items-start message-enter`}
+      className={`flex w-full gap-3 ${
+        isUser ? "justify-end" : "justify-start"
+      } items-start message-enter`}
       data-testid={`message-${message.id}`}
       data-message-role={message.role}
     >
       {!isUser && (
         <div
           id={`avatar-${message.id}`}
-          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${isError ? "mt-3 bg-insurance-error/10" : "mt-3.5 bg-insurance-info/10"}`}
+          className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+            isError
+              ? "mt-3 bg-insurance-error/10"
+              : "mt-3.5 bg-insurance-info/10"
+          }`}
           data-testid={`avatar-${message.id}`}
         >
           {isError ? (
@@ -82,7 +97,9 @@ export default function MessageBubble({
 
       <div
         id={`message-content-${message.id}`}
-        className={`flex flex-col ${isUser ? "items-end max-w-[78%]" : "items-start max-w-[92%]"}`}
+        className={`flex flex-col ${
+          isUser ? "items-end max-w-[78%]" : "items-start max-w-[92%]"
+        }`}
         data-testid={`message-content-${message.id}`}
       >
         <div

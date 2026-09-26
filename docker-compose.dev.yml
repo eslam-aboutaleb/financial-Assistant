@@ -25,7 +25,7 @@ services:
   # Development database with hardcoded credentials for convenience.
   # Data persists in the pg_data_dev volume across restarts.
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: omnicare-db-dev
     restart: unless-stopped
     environment:
@@ -60,12 +60,9 @@ services:
     volumes:
       # Mount the app directory for live code reloading.
       # Changes to Python files trigger automatic Uvicorn restart.
-      - ./backend/app:/app/app
-      # Mount alembic migrations and config for database version control.
-      - ./backend/alembic.ini:/app/alembic.ini
-      - ./backend/alembic:/app/alembic
-      # Persist ChromaDB vector store data.
-      - chroma_data_dev:/app/data/chroma_db
+       - ./backend/app:/app/app
+       - ./backend/alembic.ini:/app/alembic.ini
+       - ./backend/alembic:/app/alembic
     depends_on:
       db:
         condition: service_healthy
@@ -112,9 +109,6 @@ services:
 # Separate from production volumes to avoid data contamination.
 
 volumes:
-  chroma_data_dev:
-    name: omnicare_chroma_data_dev
-    driver: local
   pg_data_dev:
     name: omnicare_pg_data_dev
     driver: local

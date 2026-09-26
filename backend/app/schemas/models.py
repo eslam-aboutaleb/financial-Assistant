@@ -27,7 +27,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ChatRequest(BaseModel):
-    """Request schema for the ``POST /api/v1/chat`` endpoint."""
+    """Request schema for the ``POST /api/v1/chat`` endpoint.
+
+    Attributes:
+        user_id: Optional user identifier. If omitted, the authenticated
+            user from the bearer token or cookie is used.
+        message: The user's incoming chat message or insurance inquiry.
+            Limited to 4000 characters to prevent abuse and control token
+            costs for LLM processing.
+    """
 
     user_id: str | None = Field(
         default=None,
@@ -47,6 +55,7 @@ class ChatRequest(BaseModel):
     @field_validator("user_id")
     @classmethod
     def validate_user_id_format(cls, value: str | None) -> str | None:
+        """Normalize the user_id field, treating empty strings as None."""
         if value is None or value == "":
             return None
         value = value.strip()
@@ -66,7 +75,13 @@ class ChatRequest(BaseModel):
 
 
 class ToolCallInfo(BaseModel):
-    """Schema for tool call information captured during agent reasoning."""
+    """Schema for tool call information captured during agent reasoning.
+
+    Attributes:
+        name: The name of the tool invoked by the agent.
+        arguments: The arguments passed to the tool as a dict.
+        result: The result returned by the tool, or None if not yet recorded.
+    """
 
     name: str = Field(..., description="Name of the tool called")
     arguments: dict[str, Any] = Field(
@@ -76,7 +91,15 @@ class ToolCallInfo(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    """Response schema for the ``POST /api/v1/chat`` endpoint."""
+    """Response schema for the ``POST /api/v1/chat`` endpoint.
+
+    Attributes:
+        response: The agent's synthesized text response.
+        sources: Document citation sources and policy sections referenced
+            in the response.
+        tool_calls: List of tools invoked with arguments and execution results,
+            providing an auditable trace of the agent's reasoning path.
+    """
 
     response: str = Field(..., description="Agent's synthesized text response")
     sources: list[str] = Field(
@@ -109,7 +132,11 @@ class ChatResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Response schema for the ``GET /api/v1/health`` endpoint."""
+    """Response schema for the ``GET /api/v1/health`` endpoint.
+
+    Attributes:
+        status: Service health status. Either ``"healthy"`` or ``"unhealthy"``.
+    """
 
     status: str = Field(
         default="healthy",
@@ -121,7 +148,13 @@ class HealthResponse(BaseModel):
 
 
 class ErrorDetail(BaseModel):
-    """Structured error payload adhering to standardized REST error practices."""
+    """Structured error payload adhering to standardized REST error practices.
+
+    Attributes:
+        code: Machine-readable error category code (e.g., ``VALIDATION_ERROR``).
+        message: Human-readable explanation of the error suitable for end users.
+        details: Additional context or validation failure breakdown, or None.
+    """
 
     code: str = Field(..., description="Machine-readable error category code")
     message: str = Field(..., description="Human-readable explanation of the error")
@@ -131,7 +164,11 @@ class ErrorDetail(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """Standardized top-level API error envelope."""
+    """Standardized top-level API error envelope.
+
+    All error responses from the API follow this shape:
+    ``{"error": {"code": "...", "message": "...", "details": ...}}``
+    """
 
     error: ErrorDetail = Field(..., description="Error detail container")
 
@@ -145,6 +182,14 @@ class ClaimSubmission(BaseModel):
     All fields are required and validated before any database write occurs.
     This prevents malformed or malicious payloads from reaching the
     persistence layer.
+
+    Attributes:
+        policy_number: The policyholder's policy number.
+        claim_type: Category/type of insurance claim.
+        amount: Total claim amount in US dollars. Must be greater than 0.
+        description: Detailed factual description of the incident or claim
+            event. Must be at least 10 characters to ensure sufficient
+            detail for claims processing.
     """
 
     policy_number: str = Field(
@@ -185,21 +230,37 @@ class ClaimSubmission(BaseModel):
 
 
 class UserSignup(BaseModel):
-    """Request schema for user registration."""
+    """Request schema for user registration.
+
+    Attributes:
+        username: Desired username. Must be at least 3 characters.
+        password: Account password. Must be at least 6 characters.
+    """
 
     username: str = Field(..., min_length=3)
     password: str = Field(..., min_length=6)
 
 
 class UserSignin(BaseModel):
-    """Request schema for user authentication."""
+    """Request schema for user authentication.
+
+    Attributes:
+        username: The user's registered username.
+        password: The user's plaintext password for verification.
+    """
 
     username: str
     password: str
 
 
 class Token(BaseModel):
-    """Response schema for authentication endpoints (signup/signin)."""
+    """Response schema for authentication endpoints (signup/signin).
+
+    Attributes:
+        access_token: The signed JWT access token.
+        token_type: The token type (always ``"bearer"``).
+        user_id: The authenticated user's UUID as a string.
+    """
 
     access_token: str
     token_type: str
@@ -210,7 +271,14 @@ class Token(BaseModel):
 
 
 class ConversationMetadata(BaseModel):
-    """Lightweight metadata for a conversation, used in sidebar lists."""
+    """Lightweight metadata for a conversation, used in sidebar lists.
+
+    Attributes:
+        id: The conversation's primary key UUID.
+        title: Human-readable conversation title.
+        created_at: Timestamp of conversation creation.
+        updated_at: Timestamp of the last message or metadata update.
+    """
 
     id: uuid.UUID
     title: str
@@ -219,13 +287,23 @@ class ConversationMetadata(BaseModel):
 
 
 class ConversationListResponse(BaseModel):
-    """Response schema for listing a user's conversations."""
+    """Response schema for listing a user's conversations.
+
+    Attributes:
+        conversations: Ordered list of conversation metadata objects.
+    """
 
     conversations: list[ConversationMetadata]
 
 
 class ConversationDetailResponse(ConversationMetadata):
-    """Response schema for fetching a single conversation with full message history."""
+    """Response schema for fetching a single conversation with full message history.
+
+    Attributes:
+        messages: Full list of message objects from the conversation history.
+            Each message contains at least ``id``, ``role``, ``content``, and
+            ``timestamp``, plus optional ``sources`` and ``tool_calls`` fields.
+    """
 
     messages: list[dict[str, Any]]
 

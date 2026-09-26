@@ -44,7 +44,9 @@ export default function ChatPage() {
     >
       <div
         id="sidebar-container"
-        className={`fixed md:relative z-30 h-full md:w-[272px] flex-shrink-0 transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"} w-[272px]`}
+        className={`fixed md:relative z-30 h-full md:w-[272px] flex-shrink-0 transition-transform duration-300 ease-in-out ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        } w-[272px]`}
         data-testid="sidebar-container"
         onTouchStart={(e) => {
           const touch = e.touches[0];
@@ -109,13 +111,13 @@ export default function ChatPage() {
             </svg>
           </button>
         </div>
-      <ChatWindow
-        key={chatKey}
-        onNewChat={handleNewChat}
-        historyId={historyId}
-        onMessageSent={() => setRefreshTrigger((p) => p + 1)}
-        onAuthError={logout}
-      />
+        <ChatWindow
+          key={chatKey}
+          onNewChat={handleNewChat}
+          historyId={historyId}
+          onMessageSent={() => setRefreshTrigger((p) => p + 1)}
+          onAuthError={logout}
+        />
       </div>
     </main>
   );

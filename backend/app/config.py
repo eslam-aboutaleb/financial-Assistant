@@ -52,20 +52,16 @@ class Settings(BaseSettings):
         description="Provider-prefixed model identifier routed via LiteLLM",
     )
 
-    # Vector Database (ChromaDB) Configuration
-    chroma_db_path: str = Field(
-        default=str(Path(__file__).parent / "data" / "chroma_db"),
-        description="Filesystem directory for persistent Chroma vector database",
-    )
-    chroma_collection_name: str = Field(
-        default="omnicare_policies",
-        description="Chroma vector collection name for insurance policy chunks",
-    )
-
     # Embedding Model Configuration
     embedding_model: str = Field(
         default="text-embedding-3-small",
-        description="OpenAI embedding model name used by ChromaDB OpenAIEmbeddingFunction",
+        description="OpenAI embedding model name used by the embedding function",
+    )
+
+    # Vector Store Configuration
+    vector_store_provider: str = Field(
+        default="pgvector",
+        description="Vector store provider to use (pgvector, chroma, etc.)",
     )
 
     # Mock Data Store Paths
@@ -120,7 +116,7 @@ class Settings(BaseSettings):
                 except json.JSONDecodeError:
                     pass
             return [item.strip() for item in value.split(",") if item.strip()]
-        if isinstance(value, (list, tuple)):
+        if isinstance(value, list | tuple):
             return [str(item).strip() for item in value if str(item).strip()]
         return []
 

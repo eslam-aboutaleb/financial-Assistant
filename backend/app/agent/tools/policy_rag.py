@@ -1,12 +1,12 @@
-from __future__ import annotations
-
 """
 Policy RAG tool for the OmniCare agent.
 
-Queries ChromaDB (vector search) first, then falls back to Postgres BM25
-full-text search when no semantically relevant chunks are found.
+Queries pgvector (hybrid vector + BM25 search) for relevant policy documents.
 """
 
+from __future__ import annotations
+
+import re
 from typing import Any
 
 from app.rag.retriever import retrieve_hybrid
@@ -20,8 +20,8 @@ _DISTANCE_THRESHOLD = 1.3
 async def query_policy(query: str) -> dict[str, Any]:
     """Searches OmniCare insurance policy documents to answer coverage questions.
 
-    Uses hybrid retrieval: ChromaDB vector similarity search first, then
-    Postgres BM25 keyword fallback if vector search returns no results.
+    Uses hybrid retrieval: pgvector similarity search combined with BM25
+    keyword search using Reciprocal Rank Fusion.
 
     Use this tool whenever the user asks about:
     - What is or is not covered under a policy
@@ -72,8 +72,15 @@ async def query_policy(query: str) -> dict[str, Any]:
         doc_text = result["document"]
         metadata = result["metadata"]
         distance = result["distance"]
-        section = metadata.get("section", "Unknown Section")
-        source_file = metadata.get("source", "unknown")
+
+        section = metadata.get("section")
+        if not section:
+            heading_match = re.search(r"^##\s+(.+)$", doc_text, re.MULTILINE)
+            section = heading_match.group(1) if heading_match else "General Policy"
+
+        source_file = metadata.get("source")
+        if not source_file:
+            source_file = "sample_policy.md"
 
         context_parts.append(f"[{section}]:\n{doc_text}")
 

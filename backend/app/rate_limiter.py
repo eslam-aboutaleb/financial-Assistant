@@ -41,11 +41,11 @@ def _user_or_ip_key_func(request):
 
     if token:
         try:
-            from app.auth import _decode_token
+            from app.auth import _decode_token  # noqa: PLC0415
 
             user_id = _decode_token(token)
             return f"user:{str(user_id)}"
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
     return f"ip:{get_remote_address(request)}"

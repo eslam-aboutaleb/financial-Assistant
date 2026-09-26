@@ -3,7 +3,8 @@ module.exports = {
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./src/**/*.{js,ts,jsx,tsx,mdx}", "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx,mdx}",
+    "./index.html",
   ],
   theme: {
     extend: {
@@ -41,23 +42,23 @@ module.exports = {
           border: "#d6cfc3",
           muted: "#6b655a",
           surface: "#ffffff",
-        }
+        },
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
       },
       boxShadow: {
-        "subtle": "0 1px 2px 0 rgba(43, 41, 38, 0.04)",
-        "soft": "0 2px 8px 0 rgba(43, 41, 38, 0.06)",
-        "medium": "0 4px 16px 0 rgba(43, 41, 38, 0.08)",
-        "lifted": "0 8px 24px 0 rgba(43, 41, 38, 0.1)",
+        subtle: "0 1px 2px 0 rgba(43, 41, 38, 0.04)",
+        soft: "0 2px 8px 0 rgba(43, 41, 38, 0.06)",
+        medium: "0 4px 16px 0 rgba(43, 41, 38, 0.08)",
+        lifted: "0 8px 24px 0 rgba(43, 41, 38, 0.1)",
       },
       animation: {
         "fade-in": "fadeIn 0.24s ease-out",
         "slide-up": "slideUp 0.28s ease-out",
         "scale-in": "scaleIn 0.2s ease-out",
         "typing-dot": "typingDot 1.2s infinite ease-in-out both",
-        "shimmer": "shimmer 2.2s infinite linear",
+        shimmer: "shimmer 2.2s infinite linear",
       },
       keyframes: {
         fadeIn: {

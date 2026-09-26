@@ -2,10 +2,9 @@
 Pytest configuration and shared fixtures for the OmniCare Financial backend test suite.
 
 Provides fixtures for:
-- test_client: FastAPI TestClient instance configured for testing
-- sample_claims_path: Isolated temporary copy of mock_claims.json
-- mock_chroma_collection: Ephemeral in-memory Chroma collection pre-loaded with policy chunks
-- mock_current_user: Overrides the get_current_user dependency with a fixed test user ID
+ - test_client: FastAPI TestClient instance configured for testing
+ - sample_claims_path: Isolated temporary copy of mock_claims.json
+ - mock_current_user: Overrides the get_current_user dependency with a fixed test user ID
 """
 
 import asyncio
@@ -42,141 +41,15 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.config import settings  # noqa: E402
 
-# Provide a lightweight stub if chromadb is not yet installed in current environment,
-# allowing FastAPI app, health endpoint, and chat endpoint tests to run.
-try:
-    import importlib.util as _il
-
-    _chromadb_available = _il.find_spec("chromadb") is not None
-    if _chromadb_available:
-        import chromadb  # noqa: F401
-except ImportError:
-    import types
-
-    class FakeCollection:
-        """In-memory collection mirroring Chroma Collection API."""
-
-        def __init__(self, name, embedding_function=None):
-            self.name = name
-            self.embedding_function = embedding_function
-            self.ids = []
-            self.documents = []
-            self.metadatas = []
-
-        def count(self) -> int:
-            return len(self.documents)
-
-        def add(self, ids, documents, metadatas=None):
-            for i, doc_id in enumerate(ids):
-                if doc_id in self.ids:
-                    idx = self.ids.index(doc_id)
-                    self.documents[idx] = documents[i]
-                    if metadatas:
-                        self.metadatas[idx] = metadatas[i]
-                else:
-                    self.ids.append(doc_id)
-                    self.documents.append(documents[i])
-                    self.metadatas.append(metadatas[i] if metadatas else {})
-
-        def query(self, query_texts, n_results=3):
-            if not self.documents:
-                return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
-
-            scores = []
-            for doc in self.documents:
-                doc_lower = doc.lower()
-                query_tokens = [q.lower().strip() for q in query_texts[0].split() if q.strip()]
-                score = sum(1 for token in query_tokens if token in doc_lower)
-                scores.append(score)
-
-            sorted_indices = sorted(
-                range(len(self.documents)),
-                key=lambda idx: scores[idx],
-                reverse=True,
-            )
-            chosen = sorted_indices[:n_results]
-
-            docs = [self.documents[i] for i in chosen]
-            metas = [self.metadatas[i] for i in chosen]
-            distances = [round(0.05 * i, 3) for i in range(len(chosen))]
-            return {
-                "documents": [docs],
-                "metadatas": [metas],
-                "distances": [distances],
-            }
-
-    class FakeClient:
-        """In-memory client mirroring Chroma PersistentClient / Client API."""
-
-        _storage = {}
-
-        def __init__(self, path=None):
-            self.path = str(path) if path else "in_memory"
-            if self.path not in FakeClient._storage:
-                FakeClient._storage[self.path] = {}
-
-        def get_or_create_collection(self, name, embedding_function=None):
-            store = FakeClient._storage[self.path]
-            if name not in store:
-                store[name] = FakeCollection(name, embedding_function)
-            return store[name]
-
-        def create_collection(self, name, embedding_function=None):
-            store = FakeClient._storage[self.path]
-            store[name] = FakeCollection(name, embedding_function)
-            return store[name]
-
-        def get_collection(self, name):
-            store = FakeClient._storage[self.path]
-            if name not in store:
-                raise ValueError(f"Collection {name} does not exist.")
-            return store[name]
-
-        def list_collections(self):
-            store = FakeClient._storage[self.path]
-            return list(store.values())
-
-    fake_chromadb = types.ModuleType("chromadb")
-    fake_chromadb.Client = FakeClient
-    fake_chromadb.PersistentClient = FakeClient
-
-    fake_utils = types.ModuleType("chromadb.utils")
-    fake_embed = types.ModuleType("chromadb.utils.embedding_functions")
-
-    class FakeEmbeddingFunction:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def __call__(self, input):
-            return [[0.0] * 384 for _ in input]
-
-        def embed_query(self, input):
-            return self.__call__(input) if isinstance(input, list) else self.__call__([input])[0]
-
-        def embed_documents(self, input):
-            return self.__call__(input)
-
-        def name(self):
-            return "default"
-
-        is_legacy = False
-
-    fake_embed.SentenceTransformerEmbeddingFunction = FakeEmbeddingFunction
-    fake_embed.OpenAIEmbeddingFunction = FakeEmbeddingFunction
-
-    fake_utils.embedding_functions = fake_embed
-
-    sys.modules["chromadb"] = fake_chromadb
-    sys.modules["chromadb.utils"] = fake_utils
-    sys.modules["chromadb.utils.embedding_functions"] = fake_embed
-
 
 # Patch ingest_policy to avoid network calls during test client startup.
 # Import and keep the real function before patching so e2e tests can use it.
-import app.main as _app_main_module  # noqa: PLC0415
+import app.main as _app_main_module  # noqa: E402, PLC0415
 
 _real_ingest_policy = _app_main_module.ingest_policy
-_ingest_policy_patcher = patch("app.main.ingest_policy")
+_ingest_policy_patcher = patch(
+    "app.main.ingest_policy", new_callable=__import__("unittest.mock").mock.AsyncMock
+)
 _ingest_policy_patcher.start()
 
 
@@ -249,7 +122,11 @@ def test_client(sample_claims_path):
             except RuntimeError:
                 asyncio.run(engine.dispose())
             else:
-                pending = [task for task in asyncio.all_tasks(loop=loop) if not task.done() and task != asyncio.current_task()]
+                pending = [
+                    task
+                    for task in asyncio.all_tasks(loop=loop)
+                    if not task.done() and task != asyncio.current_task()
+                ]
                 for task in pending:
                     task.cancel()
                 if pending:
@@ -260,6 +137,7 @@ def test_client(sample_claims_path):
         raise
 
     import time
+
     time.sleep(0.1)
 
 
@@ -276,7 +154,11 @@ def _reset_engine():
             except RuntimeError:
                 asyncio.run(engine.dispose())
             else:
-                pending = [task for task in asyncio.all_tasks(loop=loop) if not task.done() and task != asyncio.current_task()]
+                pending = [
+                    task
+                    for task in asyncio.all_tasks(loop=loop)
+                    if not task.done() and task != asyncio.current_task()
+                ]
                 for task in pending:
                     task.cancel()
                 if pending:
@@ -284,53 +166,6 @@ def _reset_engine():
                 loop.run_until_complete(engine.dispose())
     except Exception as exc:  # pragma: no cover - cleanup best-effort
         print(f"[_reset_engine] post-test cleanup failed: {exc!r}")
-
-
-@pytest.fixture(scope="function")
-def mock_chroma_collection(tmp_path):
-    """
-    Temporary Chroma in-memory/ephemeral collection pre-loaded with policy documents.
-    Uses chromadb.Client() with default embedding or sentence-transformers.
-    """
-    import chromadb  # noqa: PLC0415
-    from chromadb.utils import embedding_functions  # noqa: PLC0415
-
-    client = chromadb.Client()
-
-    embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2"
-    )
-
-    collection = client.create_collection(
-        name="test_ephemeral_policies",
-        embedding_function=embed_fn,
-    )
-
-    documents = [
-        "## Section 1: Home Water Damage Coverage\n\nWater damage caused by sudden pipe bursts is covered up to $25,000 with a $500 deductible. Gradual leaks or flood damage are strictly excluded.",
-        "## Section 2: Personal Property Protection\n\nElectronics, furniture, and jewelry are covered up to $10,000 total. Single items exceeding $2,500 require individual appraisal receipts.",
-    ]
-    ids = ["policy_chunk_0", "policy_chunk_1"]
-    metadatas = [
-        {
-            "section": "Section 1: Home Water Damage Coverage",
-            "source": "sample_policy.md",
-            "chunk_index": 0,
-        },
-        {
-            "section": "Section 2: Personal Property Protection",
-            "source": "sample_policy.md",
-            "chunk_index": 1,
-        },
-    ]
-
-    collection.add(
-        ids=ids,
-        documents=documents,
-        metadatas=metadatas,
-    )
-
-    return collection
 
 
 _TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
@@ -357,27 +192,16 @@ def mock_current_user():
     app.dependency_overrides.pop(get_current_user, None)
 
 
-# Patch chromadb OpenAIEmbeddingFunction to avoid real API calls in unit tests
-import chromadb.utils.embedding_functions as _ef  # noqa: PLC0415
+class MockEmbeddingResponse:
+    def __init__(self, num_inputs):
+        self.data = [{"embedding": [0.0] * 1536} for _ in range(num_inputs)]
 
 
-class FakeEmbeddingFunction:
-    def __init__(self, *args, **kwargs):
-        pass
-
-    def __call__(self, input):
-        return [[0.0] * 384 for _ in input]
-
-    def embed_query(self, input):
-        return self.__call__(input) if isinstance(input, list) else self.__call__([input])[0]
-
-    def embed_documents(self, input):
-        return self.__call__(input)
-
-    def name(self):
-        return "default"
-
-    is_legacy = False
+def mock_litellm_embedding(**kwargs):
+    inputs = kwargs.get("input", [])
+    num_inputs = len(inputs) if isinstance(inputs, list) else 1
+    return MockEmbeddingResponse(num_inputs)
 
 
-_ef.OpenAIEmbeddingFunction = FakeEmbeddingFunction
+_litellm_patcher = patch("litellm.embedding", side_effect=mock_litellm_embedding)
+_litellm_patcher.start()

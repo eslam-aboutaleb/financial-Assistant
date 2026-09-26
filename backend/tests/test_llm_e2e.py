@@ -10,8 +10,6 @@ Run:
 """
 
 import logging
-import os
-import tempfile
 
 import pytest
 
@@ -21,40 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.fixture()
-def isolated_chroma_dir():
-    """Provide an isolated temporary ChromaDB directory for E2E tests."""
-    from app.config import get_settings
-    from app.rag.retriever import _collection_cache
-
-    original_chroma_path = get_settings().chroma_db_path
-    original_collection_name = get_settings().chroma_collection_name
-    temp_dir = tempfile.mkdtemp(prefix="chroma_e2e_")
-    unique_collection = f"policy_documents_e2e_{__import__('uuid').uuid4().hex[:8]}"
-    try:
-        os.environ["CHROMA_DB_PATH"] = temp_dir
-        os.environ["CHROMA_COLLECTION_NAME"] = unique_collection
-        get_settings.cache_clear()
-        _collection_cache.clear()
-        yield temp_dir
-    finally:
-        os.environ["CHROMA_DB_PATH"] = original_chroma_path
-        os.environ["CHROMA_COLLECTION_NAME"] = original_collection_name
-        get_settings.cache_clear()
-        _collection_cache.clear()
-        import shutil
-
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-@pytest.fixture()
-def e2e_user(test_client, isolated_chroma_dir, real_ingest_policy):
+def e2e_user(test_client, real_ingest_policy):
     """
     Create a real user in the database for E2E tests.
     Returns the auth headers for that user.
     """
-    from app.config import get_settings
-    from app.rag.retriever import _collection_cache
-
     username = f"e2e_user_{__import__('uuid').uuid4().hex[:8]}"
     password = "E2ePass123!"
     signup_response = test_client.post(
@@ -67,18 +36,8 @@ def e2e_user(test_client, isolated_chroma_dir, real_ingest_policy):
     assert signup_response.status_code == 201, f"Failed to create E2E user: {signup_response.text}"
     token = signup_response.json()["access_token"]
 
-    chroma_path = isolated_chroma_dir
-    try:
-        os.environ["CHROMA_DB_PATH"] = chroma_path
-        os.environ["CHROMA_COLLECTION_NAME"] = get_settings().chroma_collection_name
-        get_settings.cache_clear()
-        _collection_cache.clear()
-        count = real_ingest_policy()
-        logger.info(f"E2E test ingested {count} policy chunks")
-    finally:
-        os.environ["CHROMA_DB_PATH"] = isolated_chroma_dir
-        get_settings.cache_clear()
-        _collection_cache.clear()
+    count = real_ingest_policy()
+    logger.info(f"E2E test ingested {count} policy chunks")
 
     return {"Authorization": f"Bearer {token}"}
 
@@ -90,7 +49,7 @@ def e2e_user(test_client, isolated_chroma_dir, real_ingest_policy):
 class TestLiveLLMChatE2E:
     """End-to-end chat tests using the real LLM pipeline."""
 
-    def test_policy_rag_returns_citations(self, test_client, e2e_user, isolated_chroma_dir):
+    def test_policy_rag_returns_citations(self, test_client, e2e_user):
         """
         Ask a policy coverage question and verify the live agent returns
         a grounded response with citations from sample_policy.md.
@@ -118,7 +77,7 @@ class TestLiveLLMChatE2E:
             for source in data["sources"]
         )
 
-    def test_claim_status_lookup(self, test_client, e2e_user, isolated_chroma_dir):
+    def test_claim_status_lookup(self, test_client, e2e_user):
         """
         Submit a claim first, then verify the agent can look up its status.
         """
@@ -158,7 +117,7 @@ class TestLiveLLMChatE2E:
         response_text = lookup_data["response"].lower()
         assert confirmation_id.lower() in response_text or "submitted" in response_text
 
-    def test_prompt_injection_rejected(self, test_client, e2e_user, isolated_chroma_dir):
+    def test_prompt_injection_rejected(self, test_client, e2e_user):
         """
         Verify the agent rejects prompt injection attempts and does not
         reveal system instructions or assume unauthorized capabilities.
@@ -186,6 +145,6 @@ class TestLiveLLMChatE2E:
         assert (
             "i can't" in response_text
             or "cannot help" in response_text
-            or "i’m here to help" in response_text
+            or "i'm here to help" in response_text
             or "assist you today" in response_text
         )

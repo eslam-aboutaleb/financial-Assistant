@@ -6,17 +6,12 @@ user asks about their claims history without providing a specific claim ID
 (e.g., "Have I ever filed a claim for water damage?").
 
 Retrieval strategy:
-  - Primary: Hybrid vector search via ChromaDB. Claims are embedded at
-    ingestion time using the configured OpenAI embedding model. The hybrid
-    approach combines semantic similarity with keyword matching for robustness.
-  - Fallback: BM25 full-text search over the Postgres ``claims`` table when
-    the vector collection is empty or returns no results above the distance
-    threshold.
+  - Hybrid vector search via pgvector combined with BM25 full-text search
+    over the Postgres ``claims`` table using Reciprocal Rank Fusion.
 
 Security:
-  - The tool always scopes results to the authenticated user's ``owner_id``.
-    Even if the underlying collection had no access controls, the BM25
-    fallback filters by ``owner_id`` to prevent cross-user data leakage.
+  - The tool always scopes results to the authenticated user's ``owner_id``
+    to prevent cross-user data leakage (horizontal privilege escalation).
 """
 
 import logging
@@ -31,9 +26,13 @@ logger = logging.getLogger(__name__)
 async def search_claims(query: str, n_results: int = 5) -> list[dict[str, Any]]:
     """Search the authenticated user's claims using natural language.
 
-    This tool is intended (filters by owner_id) for open-ended claims history questions. For
+    This tool is intended for open-ended claims history questions. For
     lookups of a specific claim by ID, the ``get_claim_status`` tool is
     more appropriate.
+
+    The search is automatically scoped to the authenticated user's claims
+    using the ``owner_id`` filter, ensuring that users can only retrieve
+    their own claim history.
 
     Args:
         query: Natural language search query (e.g., "water damage in kitchen").

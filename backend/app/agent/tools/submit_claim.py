@@ -1,9 +1,13 @@
-from __future__ import annotations
-
 """
 Claim submission tool for the OmniCare agent.
+
 Validates inputs with Pydantic and appends new claims to Postgres securely.
+This tool is invoked by the ADK LlmAgent when the user explicitly confirms
+they want to file a new insurance claim after the required fields have been
+collected and summarized for human-in-the-loop confirmation.
 """
+
+from __future__ import annotations
 
 import logging
 import uuid
@@ -25,25 +29,32 @@ async def submit_claim(
     amount: float,
     description: str,
 ) -> dict[str, Any]:
-    """Submits a new OmniCare insurance claim on behalf of the policyholder.
+    """Submit a new OmniCare insurance claim on behalf of the authenticated user.
 
     Use this tool when the user explicitly wants to file a new claim. Collect
     all four required fields before calling. If any field is ambiguous, confirm
     with the user before submitting.
 
+    The tool validates inputs using the ``ClaimSubmission`` Pydantic schema,
+    generates a unique claim ID, persists the claim to Postgres, and returns
+    a structured confirmation response.
+
     Args:
-        policy_number (str): The policyholder's policy number (e.g., "POL-1092").
-        claim_type (str): Category of the claim (e.g., "Water Damage", "Personal Property").
-        amount (float): Claimed amount in US dollars. Must be greater than 0.
-        description (str): Factual description of the incident (minimum 10 characters).
+        policy_number: The policyholder's policy number (e.g., "POL-1092").
+        claim_type: Category of the claim (e.g., "Water Damage", "Personal Property").
+        amount: Claimed amount in US dollars. Must be greater than 0.
+        description: Factual description of the incident (minimum 10 characters).
 
     Returns:
-        dict: Submission confirmation or error.
+        dict: Submission confirmation or error payload. On success, includes
+        ``success=True``, ``confirmation_id``, ``status``, and a ``citation``
+        string. On failure, includes ``success=False`` and an ``error`` or
+        ``validation_errors`` key.
     """
     try:
         user_uuid = current_user_id.get()
     except LookupError:
-        logger.error("current_user_id not found in context.")
+        logger.error("current_user_id not found in context during claim submission.")
         return {"success": False, "error": "Unauthorized submission."}
 
     try:

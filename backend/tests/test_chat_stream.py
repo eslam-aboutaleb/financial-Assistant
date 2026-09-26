@@ -4,20 +4,22 @@ from unittest.mock import patch
 
 
 @pytest.mark.asyncio
-async def test_chat_stream_empty_message(test_client):
-    response = test_client.post("/api/v1/chat/stream", json={"message": ""})
-    assert response.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_chat_stream_invalid_json(test_client):
-    response = test_client.post("/api/v1/chat/stream", data="invalid")
+async def test_chat_stream_empty_message(test_client, mock_current_user):
+    response = test_client.post(
+        "/api/v1/chat/stream", json={"message": ""}, headers=mock_current_user
+    )
     assert response.status_code == 422
 
 
 @pytest.mark.asyncio
-@patch("app.agent.agent.run_agent_stream")
-async def test_chat_stream_valid(mock_run_agent_stream, test_client):
+async def test_chat_stream_invalid_json(test_client, mock_current_user):
+    response = test_client.post("/api/v1/chat/stream", data="invalid", headers=mock_current_user)
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@patch("app.api.v1.chat_stream.run_agent_stream")
+async def test_chat_stream_valid(mock_run_agent_stream, test_client, mock_current_user):
     async def mock_run(*args, **kwargs):
         yield b'data: {"type": "content", "content": "Hello"}\n\n'
 

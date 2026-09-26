@@ -3,6 +3,13 @@ Conversation history endpoints.
 
 GET /api/v1/chat/conversations - List the authenticated user's conversations.
 GET /api/v1/chat/conversations/{id} - Retrieve a single conversation's history.
+
+Security:
+  - All endpoints require authentication via the ``get_current_user``
+    dependency.
+  - Conversation queries are scoped to the authenticated user's ``user_id``
+    to prevent horizontal privilege escalation (users cannot access other
+    users' conversation history).
 """
 
 import logging
@@ -26,15 +33,17 @@ router = APIRouter()
     "/chat/conversations",
     response_model=ConversationListResponse,
     summary="List Conversations",
-    description=(
-        "Returns metadata for all conversations belonging to the authenticated user."
-    ),
+    description=("Returns metadata for all conversations belonging to the authenticated user."),
 )
 async def list_conversations(
     current_user_id: str = Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> ConversationListResponse:
     """List all conversations for the authenticated user.
+
+    Retrieves conversation metadata (id, title, timestamps) ordered by most
+    recently updated. The message history is not included to keep the response
+    lightweight for sidebar list views.
 
     Returns:
         ConversationListResponse: A list of conversation metadata objects
@@ -66,8 +75,7 @@ async def list_conversations(
     response_model=ConversationDetailResponse,
     summary="Get Conversation History",
     description=(
-        "Returns the full message history for a specific conversation, "
-        "ensuring the user owns it."
+        "Returns the full message history for a specific conversation, ensuring the user owns it."
     ),
 )
 async def get_conversation(

@@ -11,6 +11,7 @@ import subprocess
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -26,6 +27,7 @@ from app.agent.agent import configure_llm
 from app.rag.ingest import ingest_policy
 from app.schemas.models import ErrorDetail, ErrorResponse
 from app.rate_limiter import limiter
+from app.middleware import RequestSizeLimitMiddleware
 
 
 # Load centralized settings
@@ -48,7 +50,7 @@ async def _run_alembic_migrations() -> None:
     """
     backend_dir = Path(__file__).resolve().parents[1]
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             [sys.executable, "-m", "alembic", "upgrade", "head"],
             cwd=backend_dir,
             capture_output=True,
@@ -77,7 +79,7 @@ async def lifespan(app: FastAPI):
     On startup:
       - Applies pending database migrations via Alembic.
       - Configures LiteLLM environment variables.
-      - Ingests the policy document into Chroma vector store (idempotent).
+      - Ingests the policy document into pgvector store (idempotent).
     On shutdown:
       - Gracefully terminates running sessions and resources.
     """
@@ -99,7 +101,7 @@ async def lifespan(app: FastAPI):
 
     # Ingest policy documents into vector store on startup
     try:
-        count = ingest_policy()
+        count = await ingest_policy()
         logger.info(f"Policy ingestion complete: {count} chunks indexed")
     except Exception as e:
         logger.error(f"Policy ingestion failed: {e}")
@@ -108,7 +110,7 @@ async def lifespan(app: FastAPI):
     yield  # Server is running and receiving traffic
 
     logger.info(f"Shutting down {settings.app_name}...")
-    from app.database import engine
+    from app.database import engine  # noqa: PLC0415
 
     await engine.dispose()
 
@@ -147,10 +149,20 @@ async def request_validation_exception_handler(
         request.url.path,
         exc.errors(),
     )
+
+    def _sanitize_error_detail(value: Any) -> Any:
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
+        if isinstance(value, dict):
+            return {k: _sanitize_error_detail(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_sanitize_error_detail(v) for v in value]
+        return value
+
     error = ErrorDetail(
         code="VALIDATION_ERROR",
         message="Request validation failed. See details for field-level errors.",
-        details=exc.errors(),
+        details=_sanitize_error_detail(exc.errors()),
     )
     return JSONResponse(
         status_code=422,
@@ -174,8 +186,6 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Register SlowAPIMiddleware so @limiter.limit(...) decorators actually enforce limits.
 app.add_middleware(SlowAPIMiddleware)
-
-from app.middleware import RequestSizeLimitMiddleware
 
 app.add_middleware(RequestSizeLimitMiddleware, max_upload_size=5 * 1024 * 1024)
 

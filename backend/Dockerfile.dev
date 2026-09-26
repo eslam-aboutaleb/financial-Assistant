@@ -42,6 +42,7 @@ RUN uv pip install -e .
 
 # Copy backend application source code.
 COPY app/ ./app/
+COPY tests/ ./tests/
 
 # Expose backend API port.
 EXPOSE 8000

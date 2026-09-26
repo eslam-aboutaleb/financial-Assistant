@@ -13,7 +13,6 @@
  * or used elsewhere.
  */
 
-
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactNode, useState } from "react";
 import { AuthProvider } from "@/context/AuthContext";
@@ -37,16 +36,14 @@ export default function Providers({ children }: { children: ReactNode }) {
             // side effects (sending a chat message, creating a conversation).
             // We only retry reads (queries), not writes (mutations).
             retry: 3,
-          }
+          },
         },
-      })
+      }),
   );
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        {children}
-      </AuthProvider>
+      <AuthProvider>{children}</AuthProvider>
     </QueryClientProvider>
   );
 }

@@ -1,5 +1,3 @@
-import asyncio
-
 """
 Chat endpoint.
 
@@ -20,6 +18,7 @@ Idempotency:
   Cached responses are indicated by the ``X-Idempotent-Replayed: true`` header.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -28,19 +27,13 @@ import litellm
 
 from app.agent.agent import run_agent, reset_user_session
 from app.agent.conversation_store import save_conversation_turn
+from app.auth import get_current_user
 from app.config import Settings, get_settings
 from app.idempotency import store_response, idempotent_endpoint
-from app.auth import get_current_user
-
-from app.schemas.models import (
-    ChatRequest,
-    ChatResponse,
-    ErrorResponse,
-)
+from app.rate_limiter import limiter
+from app.schemas.models import ChatRequest, ChatResponse, ErrorResponse
 
 logger = logging.getLogger(__name__)
-
-from app.rate_limiter import limiter
 
 router = APIRouter()
 
@@ -81,7 +74,7 @@ STATUS_422 = getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422)
 )
 @limiter.limit("20/minute")
 @idempotent_endpoint()
-async def chat(
+async def chat(  # noqa: PLR0913, PLR0917
     payload: ChatRequest,
     request: Request,
     response: Response,
@@ -115,7 +108,8 @@ async def chat(
     """
     if payload.user_id and payload.user_id != current_user_id:
         logger.warning(
-            "Request body user_id '%s' differs from authenticated user '%s'; using authenticated user.",
+            "Request body user_id '%s' differs from authenticated user '%s'; "
+            "using authenticated user.",
             payload.user_id,
             current_user_id,
         )
@@ -133,7 +127,8 @@ async def chat(
             message_text = str(exc)
             if "tool_call_id" in message_text or "tool_calls" in message_text:
                 logger.warning(
-                    "Detected bad tool-call history for user '%s'; resetting session and retrying once.",
+                    "Detected bad tool-call history for user '%s'; "
+                    "resetting session and retrying once.",
                     effective_user_id,
                 )
                 reset_user_session(effective_user_id)
@@ -155,7 +150,7 @@ async def chat(
         # Always return a generic, user-friendly error message.
         # Internal details are logged server-side only.
         error_detail = (
-            "An unexpected error occurred while processing your request. " "Please try again later."
+            "An unexpected error occurred while processing your request. Please try again later."
         )
         # NOTE: Errors are intentionally NOT cached -- the client should retry on failure.
         raise HTTPException(

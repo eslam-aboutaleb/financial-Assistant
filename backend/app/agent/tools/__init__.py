@@ -5,7 +5,7 @@ Contains all tool functions registered with the Google ADK LlmAgent.
 Each tool is a standalone async function that the agent can invoke
 based on user intent:
 
-  - ``query_policy``    -- RAG search over ChromaDB policy documents.
+  - ``query_policy``    -- RAG search over pgvector policy documents.
   - ``get_claim_status`` -- Owner-scoped Postgres claim lookup.
   - ``submit_claim``    -- Pydantic-validated claim insertion.
 """

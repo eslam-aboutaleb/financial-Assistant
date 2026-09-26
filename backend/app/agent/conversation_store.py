@@ -20,7 +20,7 @@ from app.models.conversation import Conversation
 logger = logging.getLogger(__name__)
 
 
-async def save_conversation_turn(
+async def save_conversation_turn(  # noqa: PLR0913, PLR0917
     user_id: str,
     session_id: str,
     message: str,

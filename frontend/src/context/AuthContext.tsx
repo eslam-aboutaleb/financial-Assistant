@@ -16,7 +16,6 @@
  *   - ``logout`` clears both and triggers a toast notification.
  */
 
-
 import { createContext, useContext, useState, ReactNode } from "react";
 import { toast } from "react-hot-toast";
 
@@ -44,7 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string | null>(() => {
     const stored = localStorage.getItem("omnicare_user_id");
     if (!stored) return null;
-    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const uuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (uuid.test(stored)) {
       return stored;
     }
