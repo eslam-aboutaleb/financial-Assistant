@@ -31,8 +31,13 @@ RUN rm -rf /usr/local/bin/pip* /usr/local/lib/python*/site-packages/pip*
 COPY app/ ./app/
 COPY tests/ ./tests/
 
-# Expose backend API port
+# Create a non-root user to run the application
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser \
+    && chown -R appuser:appuser /app
 
+USER appuser
+
+# Expose backend API port
 EXPOSE 8000
 
 # Start FastAPI application using Uvicorn server

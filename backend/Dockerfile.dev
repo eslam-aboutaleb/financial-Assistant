@@ -44,6 +44,12 @@ RUN uv pip install -e .
 COPY app/ ./app/
 COPY tests/ ./tests/
 
+# Create a non-root user to run the application
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
 # Expose backend API port.
 EXPOSE 8000
 

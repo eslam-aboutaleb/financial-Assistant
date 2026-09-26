@@ -48,8 +48,7 @@ async def retrieve_claims_hybrid(
             threshold=distance_threshold,
             text_field="description",
             metadata_fields=["claim_id", "policy_number", "claim_type", "status", "amount"],
-            extra_where="owner_id = :owner_id",
-            extra_params={"owner_id": str(user_id)},
+            owner_id=str(user_id),
         )
     except Exception as exc:
         logger.error("Hybrid claims search failed: %s", exc)

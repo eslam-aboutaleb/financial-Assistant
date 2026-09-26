@@ -37,6 +37,13 @@ RUN \
 # Copy the full source code.
 COPY . .
 
+# Create a non-root user to run the application
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 appuser --ingroup nodejs && \
+    chown -R appuser:nodejs /app
+
+USER appuser
+
 # Set environment to development for Vite dev server behavior.
 ENV NODE_ENV=development
 

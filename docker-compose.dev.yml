@@ -29,10 +29,9 @@ services:
     container_name: omnicare-db-dev
     restart: unless-stopped
     environment:
-      # Hardcoded credentials for local development (not for production).
-      POSTGRES_USER: omnicare
-      POSTGRES_PASSWORD: omnicare_password
-      POSTGRES_DB: omnicare
+      POSTGRES_USER: ${POSTGRES_USER:-omnicare}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-omnicare_password}
+      POSTGRES_DB: ${POSTGRES_DB:-omnicare}
     ports:
       - "5432:5432"
     volumes:

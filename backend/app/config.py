@@ -4,6 +4,7 @@ Loads environment variables from .env file with strict typing and sensible defau
 """
 
 import json
+import secrets
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -94,8 +95,8 @@ class Settings(BaseSettings):
 
     # Authentication
     jwt_secret_key: str = Field(
-        default="super-secret-key-for-development-only-change-me",
-        description="Secret key for signing JWT tokens. MUST be overridden in production.",
+        default_factory=lambda: secrets.token_urlsafe(32),
+        description="Secret key for signing JWT tokens. Auto-generated in development if not set.",
     )
 
     # Database

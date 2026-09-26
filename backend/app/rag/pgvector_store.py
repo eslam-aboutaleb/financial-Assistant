@@ -4,11 +4,17 @@ pgvector implementation of the VectorStore interface.
 Provides hybrid search (vector + BM25 RRF), document counting, and upsert
 operations against PostgreSQL tables with pgvector and tsvector columns.
 
-Security:
-  - All SQL identifiers (table names, column names) are validated against a
-    strict allowlist regex before interpolation into raw SQL strings. This
-    prevents SQL injection attacks even when identifiers are derived from
-    configuration.
+Security model:
+  - All user-supplied **values** are passed as bound parameters via SQLAlchemy's
+    parameterized queries. They never appear in the SQL string, so they cannot
+    inject SQL.
+  - All **SQL identifiers** (table names, column names, filter keys) are
+    validated against a strict allowlist regex (``^[A-Za-z_][A-Za-z0-9_]*$``)
+    before interpolation into raw SQL strings. This prevents SQL injection even
+    when identifiers are derived from configuration.
+  - Raw SQL is used because the hybrid search query requires complex CTEs with
+    window functions, pgvector operators, and BM25 full-text search that are
+    impractical to express in SQLAlchemy ORM/Core while remaining readable.
 """
 
 from __future__ import annotations
@@ -78,8 +84,7 @@ class PgVectorStore:
         threshold: float,
         text_field: str = "text",
         metadata_fields: list[str] | None = None,
-        extra_where: str | None = None,
-        extra_params: dict[str, Any] | None = None,
+        **filters: Any,
     ) -> list[dict[str, Any]]:
         """Hybrid search with vector + BM25 RRF.
 
@@ -102,10 +107,9 @@ class PgVectorStore:
             text_field: Name of the column containing the document text.
             metadata_fields: List of additional column names to include in the
                 result metadata dict.
-            extra_where: Additional SQL WHERE clause fragment (without the
-                leading "WHERE") for filtering (e.g., "owner_id = :owner_id").
-            extra_params: Additional query parameters for the ``extra_where``
-                clause.
+            **filters: Additional equality filters applied to both search CTEs
+                (e.g., ``owner_id="..."``). Keys must be valid SQL identifiers;
+                values are bound as parameters to prevent SQL injection.
 
         Returns:
             list[dict]: A list of result dicts sorted by RRF score, each
@@ -116,6 +120,8 @@ class PgVectorStore:
                 - ``_rrf_score`` (float): Combined RRF relevance score.
         """
         _validate_identifier(text_field, "text_field")
+        for key in filters:
+            _validate_identifier(key, "filter key")
         metadata_fields = metadata_fields or []
         for field in metadata_fields:
             _validate_identifier(field, "metadata_field")
@@ -135,25 +141,26 @@ class PgVectorStore:
         else:
             meta_coalesce = ""
 
-        # Build JOIN condition between the two CTEs. The base condition is
-        # equality on the primary key; extra_where is appended to also match
-        # scoping filters (e.g., owner_id).
+        # Build JOIN condition between the two CTEs.
         join_conditions = [f"v.{self.id_field} = k.{self.id_field}"]
-        if extra_where:
-            join_conditions.append(extra_where)
 
-        join_sql = " AND ".join(join_conditions)
-
-        # Build query parameters. Parameters are bound by name to prevent
-        # SQL injection while allowing dynamic values.
+        # Build query parameters and WHERE fragments from validated filters.
         params: dict[str, Any] = {
             "query": query,
             "embedding": embedding_str,
             "distance_threshold": threshold,
             "n_results": n_results,
         }
-        if extra_params:
-            params.update(extra_params)
+        filter_parts: list[str] = []
+        for key, value in filters.items():
+            filter_parts.append(f"{key} = :{key}")
+            params[key] = value
+
+        extra_where = " AND ".join(filter_parts) if filter_parts else None
+        if extra_where:
+            join_conditions.append(extra_where)
+
+        join_sql = " AND ".join(join_conditions)
 
         stmt = text(
             f"""
@@ -223,27 +230,34 @@ class PgVectorStore:
             logger.error("Hybrid search failed on %s: %s", self.table_name, exc)
             return []
 
-    async def count(
-        self,
-        extra_where: str | None = None,
-        extra_params: dict[str, Any] | None = None,
-    ) -> int:
+    async def count(self, **filters: Any) -> int:
         """Count documents in the store.
 
         Args:
-            extra_where: Additional WHERE clause fragment (without 'WHERE').
-            extra_params: Additional query parameters for the WHERE clause.
+            **filters: Optional equality filters (e.g., ``owner_id="..."``).
+                Keys must be valid SQL identifiers; values are bound as
+                parameters to prevent SQL injection.
 
         Returns:
             int: Number of matching documents, or 0 on error.
         """
+        for key in filters:
+            _validate_identifier(key, "filter key")
+
+        params: dict[str, Any] = {}
+        filter_parts: list[str] = []
+        for key, value in filters.items():
+            filter_parts.append(f"{key} = :{key}")
+            params[key] = value
+
+        where_clause = f"WHERE {' AND '.join(filter_parts)}" if filter_parts else ""
+
         stmt = text(
             f"""
             SELECT COUNT(*) FROM {self.table_name}
-            {f"WHERE {extra_where}" if extra_where else ""}
+            {where_clause}
         """
         )
-        params = extra_params or {}
 
         try:
             async with async_session_factory() as session:

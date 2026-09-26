@@ -15,11 +15,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
     """Enforce a maximum request body size to protect against oversized payloads.
 
-    This middleware reads the ``Content-Length`` header before the request body
-    is consumed and returns an HTTP 413 (Payload Too Large) response if the
-    declared size exceeds the configured threshold. This prevents unnecessary
-    memory allocation and protects downstream processing from malformed or
-    maliciously large requests.
+    This middleware checks the ``Content-Length`` header first. If the header is
+    missing or the request uses chunked transfer encoding, the middleware reads
+    the request body up to the configured limit and returns an HTTP 413
+    (Payload Too Large) response if the actual body exceeds the threshold.
+    This prevents unnecessary memory allocation and protects downstream
+    processing from malformed or maliciously large requests.
 
     Attributes:
         max_upload_size: Maximum allowed request body size in bytes.
@@ -41,8 +42,9 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 
         Reads the ``Content-Length`` header and compares it against
         ``max_upload_size``. If the header is missing or unparseable, the
-        request is forwarded without rejection (the body will be streamed and
-        rejected later by ASGI/uvicorn if it exceeds limits).
+        request body is read and measured. If the body exceeds the limit,
+        a 413 response is returned. Otherwise, the downstream application
+        receives the request with the cached body.
 
         Args:
             request: The incoming ASGI request.
@@ -53,21 +55,31 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
             response.
         """
         content_length = request.headers.get("content-length")
+        exceeded = False
+
         if content_length:
             try:
                 if int(content_length) > self.max_upload_size:
-                    return JSONResponse(
-                        status_code=413,
-                        content={
-                            "error": {
-                                "code": "PAYLOAD_TOO_LARGE",
-                                "message": (
-                                    f"Request body exceeds the maximum allowed size of "
-                                    f"{self.max_upload_size} bytes."
-                                ),
-                            }
-                        },
-                    )
+                    exceeded = True
             except ValueError:
-                pass
+                exceeded = False
+        else:
+            body = await request.body()
+            if len(body) > self.max_upload_size:
+                exceeded = True
+
+        if exceeded:
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "error": {
+                        "code": "PAYLOAD_TOO_LARGE",
+                        "message": (
+                            f"Request body exceeds the maximum allowed size of "
+                            f"{self.max_upload_size} bytes."
+                        ),
+                    }
+                },
+            )
+
         return await call_next(request)
