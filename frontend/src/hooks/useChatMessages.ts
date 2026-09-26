@@ -49,6 +49,7 @@ export function useChatMessages({
 
   useEffect(() => {
     if (historyData?.messages) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessages(
         historyData.messages.map((m: { id?: string; role: Message["role"]; content: string; timestamp?: string; sources?: string[]; tool_calls?: Message["toolCalls"] }) => ({
           id: m.id || Date.now().toString(),

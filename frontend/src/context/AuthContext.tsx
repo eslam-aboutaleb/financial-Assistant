@@ -17,7 +17,7 @@
  */
 
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode } from "react";
 import { toast } from "react-hot-toast";
 
 interface AuthContextType {
@@ -31,45 +31,27 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  // Hydrate auth state from localStorage on initial mount.
-  useEffect(() => {
-    let shouldSetToken = false;
-    let shouldSetUserId = false;
-
-    const storedToken = localStorage.getItem("omnicare_token");
-    const storedUserId = localStorage.getItem("omnicare_user_id");
-
-    if (storedToken && storedUserId) {
-      if (storedToken.includes(".")) {
-        setToken(storedToken);
-        shouldSetToken = true;
-      } else {
-        localStorage.removeItem("omnicare_token");
-      }
-
-      try {
-        const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (uuid.test(storedUserId)) {
-          setUserId(storedUserId);
-          shouldSetUserId = true;
-        } else {
-          localStorage.removeItem("omnicare_user_id");
-        }
-      } catch {
-        localStorage.removeItem("omnicare_user_id");
-      }
+  const [token, setToken] = useState<string | null>(() => {
+    const stored = localStorage.getItem("omnicare_token");
+    if (stored && stored.includes(".")) {
+      return stored;
     }
-
-    if (!shouldSetToken || !shouldSetUserId) {
-      setIsLoaded(true);
-    } else {
-      setIsLoaded(true);
+    if (stored) {
+      localStorage.removeItem("omnicare_token");
     }
-  }, []);
+    return null;
+  });
+  const [userId, setUserId] = useState<string | null>(() => {
+    const stored = localStorage.getItem("omnicare_user_id");
+    if (!stored) return null;
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuid.test(stored)) {
+      return stored;
+    }
+    localStorage.removeItem("omnicare_user_id");
+    return null;
+  });
+  const [isLoaded] = useState(true);
 
   const login = (newToken: string, newUserId: string) => {
     localStorage.setItem("omnicare_token", newToken);

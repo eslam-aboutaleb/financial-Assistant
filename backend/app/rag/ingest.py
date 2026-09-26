@@ -254,17 +254,11 @@ def ingest_policy(
     try:
         import asyncio
 
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # In a running event loop (e.g. lifespan), schedule as a task
-            loop.create_task(_write_chunks_to_postgres(chunks))
-        else:
-            loop.run_until_complete(_write_chunks_to_postgres(chunks))
+        loop = asyncio.get_running_loop()
+        loop.create_task(_write_chunks_to_postgres(chunks))
     except RuntimeError:
-        # No event loop (e.g. synchronous build-time invocation)
+        # No running event loop (e.g. synchronous build-time invocation)
         try:
-            import asyncio
-
             asyncio.run(_write_chunks_to_postgres(chunks))
         except Exception as exc:
             logger.warning("Could not write policy chunks to Postgres during ingestion: %s", exc)

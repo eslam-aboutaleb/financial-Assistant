@@ -249,10 +249,41 @@ def test_client(sample_claims_path):
             except RuntimeError:
                 asyncio.run(engine.dispose())
             else:
+                pending = [task for task in asyncio.all_tasks(loop=loop) if not task.done() and task != asyncio.current_task()]
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
                 loop.run_until_complete(engine.dispose())
     except Exception as exc:  # pragma: no cover - surfaced in test output
         print(f"[test_client] engine dispose failed: {exc!r}")
         raise
+
+    import time
+    time.sleep(0.1)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def _reset_engine():
+    yield
+    try:
+        from app.database import engine  # noqa: PLC0415
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(engine.dispose())
+            else:
+                pending = [task for task in asyncio.all_tasks(loop=loop) if not task.done() and task != asyncio.current_task()]
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                loop.run_until_complete(engine.dispose())
+    except Exception as exc:  # pragma: no cover - cleanup best-effort
+        print(f"[_reset_engine] post-test cleanup failed: {exc!r}")
 
 
 @pytest.fixture(scope="function")
