@@ -30,12 +30,10 @@ export default function ChatPage() {
   }
   if (status !== "authenticated") return <Navigate to="/login" replace />;
 
-  const handleNewChat = async () => {
-    try {
-      await resetChat(token);
-    } catch {
+  const handleNewChat = () => {
+    resetChat(token).catch(() => {
       // Best-effort reset UI even if the API call fails.
-    }
+    });
     setHistoryLoadError(null);
     setChatKey((prev) => prev + 1);
     setRefreshTrigger((prev) => prev + 1);

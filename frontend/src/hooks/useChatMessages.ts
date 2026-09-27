@@ -58,35 +58,36 @@ export function useChatMessages({
   });
 
    useEffect(() => {
-     if (historyData?.messages) {
-       // Sync conversation history from React Query into local message state.
-       // This is an intentional side effect: we derive local UI state from
-       // an external data source (the query result), which is exactly what
-       // useEffect is designed for.
-       // eslint-disable-next-line react-hooks/set-state-in-effect
-       setMessages(
-         historyData.messages.map(
-           (m: {
-             id?: string;
-             role: Message["role"];
-             content: string;
-             timestamp?: string;
-             sources?: string[];
-             tool_calls?: Message["toolCalls"];
-           }) => ({
-             id: m.id || Date.now().toString(),
-             role: m.role,
-             content: m.content,
-             timestamp: new Date(m.timestamp || Date.now()),
-             sources: m.sources,
-             toolCalls: m.tool_calls,
-           }),
-         ) satisfies Message[],
-       );
-       setHistoryLoadError(null);
-       onHistoryLoaded?.();
+      if (historyData?.messages && historyId) {
+        setMessages(
+          historyData.messages.map(
+            (m: {
+              id?: string;
+              role: Message["role"];
+              content: string;
+              timestamp?: string;
+              sources?: string[];
+              tool_calls?: Message["toolCalls"];
+            }) => ({
+              id: m.id || Date.now().toString(),
+              role: m.role,
+              content: m.content,
+              timestamp: new Date(m.timestamp || Date.now()),
+              sources: m.sources,
+              toolCalls: m.tool_calls,
+            }),
+          ) satisfies Message[],
+        );
+        setHistoryLoadError(null);
+        onHistoryLoaded?.();
+      }
+    }, [historyData, onHistoryLoaded]);
+
+   useEffect(() => {
+     if (!historyId) {
+       setMessages([]);
      }
-   }, [historyData, onHistoryLoaded]);
+   }, [historyId]);
 
    useEffect(() => {
      if (historyError) {
