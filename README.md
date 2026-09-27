@@ -290,7 +290,7 @@ curl http://localhost:8000/api/v1/health
 curl -X POST http://localhost:8000/api/v1/auth/signup \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "johndoe",
+    "email": "john@example.com",
     "password": "securepassword123"
   }'
 ```
@@ -301,7 +301,7 @@ curl -X POST http://localhost:8000/api/v1/auth/signup \
 curl -X POST http://localhost:8000/api/v1/auth/signin \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "johndoe",
+    "email": "john@example.com",
     "password": "securepassword123"
   }'
 # -> {"access_token": "...", "token_type": "bearer", "user_id": "..."}
@@ -651,7 +651,7 @@ Users must authenticate before accessing the chat interface. The system supports
 
 ![Login Screen](frontend/public/readme/02-login.png)
 
-**Sign-in screen** — users authenticate with username and password before accessing the chat.
+**Sign-in screen** — users authenticate with email and password before accessing the chat.
 
 ![Empty Chat State](frontend/public/readme/01-empty-state.png)
 
@@ -807,7 +807,7 @@ The React frontend provides a ChatGPT-style dark theme chat experience:
 
 ![Login Screen](frontend/public/readme/02-login.png)
 
-**Sign-in screen** — users authenticate with username and password before accessing the chat.
+**Sign-in screen** — users authenticate with email and password before accessing the chat.
 
 ![Chat Interface](frontend/public/readme/03-chat-interface.png)
 
