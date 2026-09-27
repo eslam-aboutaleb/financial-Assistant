@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useParams, useNavigate } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
 import ChatWindow from "@/components/ChatWindow";
 import { toast } from "react-hot-toast";
@@ -10,9 +10,12 @@ export default function ChatPage() {
   const touchStartX = useRef<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [chatKey, setChatKey] = useState(0);
-  const [historyId, setHistoryId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const { status, logout, token } = useAuth();
+  const { conversationId } = useParams<{ conversationId?: string }>();
+  const navigate = useNavigate();
+  const isHistoryMode = !!conversationId;
+  const [historyLoadError, setHistoryLoadError] = useState<string | null>(null);
 
   if (status === "loading") {
     return (
@@ -34,17 +37,27 @@ export default function ChatPage() {
     } catch {
       // Best-effort reset UI even if the API call fails.
     }
-    setHistoryId(null);
+    setHistoryLoadError(null);
     setChatKey((prev) => prev + 1);
     setRefreshTrigger((prev) => prev + 1);
     toast.success("Started a new chat", { id: "Started a new chat" });
     if (sidebarOpen) setSidebarOpen(false);
+    navigate("/chat", { replace: true });
   };
 
   const handleSelectChat = (id: string) => {
-    setHistoryId(id);
+    setHistoryLoadError(null);
     setChatKey((prev) => prev + 1);
     if (sidebarOpen) setSidebarOpen(false);
+    navigate(`/chat/${id}`);
+  };
+
+  const handleHistoryLoaded = () => {
+    setHistoryLoadError(null);
+  };
+
+  const handleHistoryLoadError = (message: string) => {
+    setHistoryLoadError(message);
   };
 
   return (
@@ -75,10 +88,28 @@ export default function ChatPage() {
           onLogout={logout}
           onSelectChat={handleSelectChat}
           refreshTrigger={refreshTrigger}
-          activeConversationId={historyId}
+          activeConversationId={conversationId}
         />
       </div>
 
+      {historyLoadError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-sand-50/80 z-10">
+          <div className="max-w-sm text-center p-4 bg-insurance-surface border border-insurance-border rounded-xl shadow-medium">
+            <div className="text-sm font-medium text-insurance-ink mb-1">
+              Failed to load conversation
+            </div>
+            <div className="text-xs text-insurance-ink-secondary mb-3">
+              {historyLoadError}
+            </div>
+            <button
+              onClick={() => navigate("/chat")}
+              className="px-3 py-2 bg-insurance-info text-white text-xs font-medium rounded-lg hover:bg-insurance-ink-secondary transition-colors"
+            >
+              Start a new chat
+            </button>
+          </div>
+        </div>
+      )}
       {sidebarOpen && (
         <div
           id="sidebar-overlay"
@@ -125,9 +156,11 @@ export default function ChatPage() {
         <ChatWindow
           key={chatKey}
           onNewChat={handleNewChat}
-          historyId={historyId}
+          historyId={conversationId}
           onMessageSent={() => setRefreshTrigger((p) => p + 1)}
           onAuthError={logout}
+          onHistoryLoaded={handleHistoryLoaded}
+          onHistoryLoadError={handleHistoryLoadError}
         />
       </div>
     </main>

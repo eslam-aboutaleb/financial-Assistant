@@ -27,11 +27,15 @@ export function useChatMessages({
   historyId,
   onMessageSent,
   onAuthError,
+  onHistoryLoaded,
+  onHistoryLoadError,
 }: {
   onNewChat: () => void;
   historyId?: string | null;
   onMessageSent?: () => void;
   onAuthError?: () => void;
+  onHistoryLoaded?: () => void;
+  onHistoryLoadError?: (message: string) => void;
 }) {
   const { token, status } = useAuth();
 
@@ -41,45 +45,56 @@ export function useChatMessages({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [historyLoadError, setHistoryLoadError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const idempotencyKeyRef = useRef<string>("");
   const lastSentIdempotencyKeyRef = useRef<string | null>(null);
 
   // Load conversation history when viewing an archived chat.
-  const { data: historyData, isLoading: isLoadingHistory } = useQuery({
+  const { data: historyData, isLoading: isLoadingHistory, error: historyError } = useQuery({
     queryKey: ["conversation", historyId],
     queryFn: () => getConversationHistory(token!, historyId!),
     enabled: !!historyId && !!token,
   });
 
-  useEffect(() => {
-    if (historyData?.messages) {
-      // Sync conversation history from React Query into local message state.
-      // This is an intentional side effect: we derive local UI state from
-      // an external data source (the query result), which is exactly what
-      // useEffect is designed for.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMessages(
-        historyData.messages.map(
-          (m: {
-            id?: string;
-            role: Message["role"];
-            content: string;
-            timestamp?: string;
-            sources?: string[];
-            tool_calls?: Message["toolCalls"];
-          }) => ({
-            id: m.id || Date.now().toString(),
-            role: m.role,
-            content: m.content,
-            timestamp: new Date(m.timestamp || Date.now()),
-            sources: m.sources,
-            toolCalls: m.tool_calls,
-          }),
-        ) satisfies Message[],
-      );
-    }
-  }, [historyData]);
+   useEffect(() => {
+     if (historyData?.messages) {
+       // Sync conversation history from React Query into local message state.
+       // This is an intentional side effect: we derive local UI state from
+       // an external data source (the query result), which is exactly what
+       // useEffect is designed for.
+       // eslint-disable-next-line react-hooks/set-state-in-effect
+       setMessages(
+         historyData.messages.map(
+           (m: {
+             id?: string;
+             role: Message["role"];
+             content: string;
+             timestamp?: string;
+             sources?: string[];
+             tool_calls?: Message["toolCalls"];
+           }) => ({
+             id: m.id || Date.now().toString(),
+             role: m.role,
+             content: m.content,
+             timestamp: new Date(m.timestamp || Date.now()),
+             sources: m.sources,
+             toolCalls: m.tool_calls,
+           }),
+         ) satisfies Message[],
+       );
+       setHistoryLoadError(null);
+       onHistoryLoaded?.();
+     }
+   }, [historyData, onHistoryLoaded]);
+
+   useEffect(() => {
+     if (historyError) {
+       const message = historyError instanceof Error ? historyError.message : "Failed to load conversation history";
+       setHistoryLoadError(message);
+       onHistoryLoadError?.(message);
+     }
+   }, [historyError, onHistoryLoadError]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -313,6 +328,7 @@ export function useChatMessages({
     isReadOnly,
     isLoading,
     isStreaming,
+    historyLoadError,
     scrollToBottom,
     handleScroll,
     handleSendMessage,

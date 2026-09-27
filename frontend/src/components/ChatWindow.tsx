@@ -23,6 +23,8 @@ interface ChatWindowProps {
   historyId?: string | null;
   onMessageSent?: () => void;
   onAuthError?: () => void;
+  onHistoryLoaded?: () => void;
+  onHistoryLoadError?: (message: string) => void;
 }
 
 export default function ChatWindow({
@@ -30,6 +32,8 @@ export default function ChatWindow({
   historyId,
   onMessageSent,
   onAuthError,
+  onHistoryLoaded,
+  onHistoryLoadError,
 }: ChatWindowProps) {
   const {
     messages,
@@ -39,6 +43,7 @@ export default function ChatWindow({
     hasError,
     isReadOnly,
     isStreaming,
+    historyLoadError,
     scrollToBottom,
     handleScroll,
     handleSendMessage,
@@ -49,6 +54,8 @@ export default function ChatWindow({
     historyId,
     onMessageSent,
     onAuthError,
+    onHistoryLoaded,
+    onHistoryLoadError,
   });
 
   return (

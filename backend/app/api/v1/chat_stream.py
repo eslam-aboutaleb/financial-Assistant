@@ -52,6 +52,10 @@ def _transform_adk_event(event_json: str, sources: list[str] | None = None) -> s
 
     event_type = event.get("type", "")
 
+    if event.get("is_final_response"):
+        sources_payload = json.dumps(sources or [])
+        return f'data: {{"type": "response_complete", "sources": {sources_payload}}}\n\n'
+
     if event_type == "text_delta" or (
         event.get("content") and event.get("content", {}).get("parts")
     ):
@@ -60,10 +64,6 @@ def _transform_adk_event(event_json: str, sources: list[str] | None = None) -> s
         if text_deltas:
             content_str = json.dumps("".join(text_deltas))
             return f'data: {{"type": "text_delta", "content": {content_str}}}\n\n'
-
-    if event.get("is_final_response"):
-        sources_payload = json.dumps(sources or [])
-        return f'data: {{"type": "response_complete", "sources": {sources_payload}}}\n\n'
 
     return f"data: {raw}\n\n"
 
@@ -144,6 +144,11 @@ async def chat_stream(
             logger.exception("Error during streaming: %s", err)
             yield "data: {'error': 'Streaming failed'}\n\n"
             return
+
+        # Emit response_complete with accumulated sources after the stream ends.
+        # This guarantees the frontend receives sources even if the final ADK
+        # event was transformed into a text_delta because it contained content.
+        yield f'data: {{"type": "response_complete", "sources": {json.dumps(stream_result.sources)}}}\n\n'
 
         # Persist conversation turn after stream completes
         if stream_result.session_id:
