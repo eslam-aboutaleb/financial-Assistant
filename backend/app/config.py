@@ -59,6 +59,12 @@ class Settings(BaseSettings):
         description="OpenAI embedding model name used by the embedding function",
     )
 
+    # RAG Configuration
+    rag_distance_threshold: float = Field(
+        default=1.3,
+        description="Maximum L2 distance for RAG vector search (lower = stricter matching)",
+    )
+
     # Vector Store Configuration
     vector_store_provider: str = Field(
         default="pgvector",

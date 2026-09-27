@@ -1,22 +1,23 @@
 """initial schema
 
 Revision ID: 6f253a5df2e9
-Revises: 
+Revises:
 Create Date: 2026-09-25 22:22:51.785503
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '6f253a5df2e9'
-down_revision: Union[str, Sequence[str], None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "6f253a5df2e9"
+down_revision: str | Sequence[str] | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -61,10 +62,27 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("session_id", sa.String(128), nullable=False),
-        sa.Column("title", sa.String(255), nullable=False, server_default=sa.text("'New Chat'::character varying")),
-        sa.Column("messages", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "title",
+            sa.String(255),
+            nullable=False,
+            server_default=sa.text("'New Chat'::character varying"),
+        ),
+        sa.Column(
+            "messages", postgresql.JSONB(), nullable=False, server_default=sa.text("'[]'::jsonb")
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
         sa.ForeignKeyConstraint(
             ["user_id"], ["users.id"], name="conversations_user_id_fkey", ondelete="CASCADE"
         ),

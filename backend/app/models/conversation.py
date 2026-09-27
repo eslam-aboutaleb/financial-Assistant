@@ -8,9 +8,10 @@ message table.
 """
 
 import uuid
-from datetime import datetime, UTC
-from sqlalchemy import Column, String, DateTime, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from datetime import UTC, datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.models.base import Base
 

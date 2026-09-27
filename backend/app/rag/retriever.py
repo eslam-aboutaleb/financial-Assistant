@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.config import get_settings
 from app.rag.embedding import EmbeddingFactory
 from app.rag.vector_store import get_vector_store
 
@@ -19,25 +20,37 @@ logger = logging.getLogger(__name__)
 async def retrieve_hybrid(
     query: str,
     n_results: int = 5,
-    distance_threshold: float = 1.3,
+    distance_threshold: float | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid retrieval: vector search + BM25 keyword search using RRF.
+
+    Orchestrates the two-stage retrieval pipeline:
+      1. Embeds the query using the configured embedding function.
+      2. Delegates to the vector store's ``hybrid_search`` method, which
+         executes parallel vector similarity and BM25 full-text search CTEs
+         and merges results via Reciprocal Rank Fusion.
 
     Args:
         query: The natural-language search query.
         n_results: Maximum number of candidates to fetch.
         distance_threshold: Maximum L2 distance for the vector search part.
+            If None, reads from ``settings.rag_distance_threshold``.
 
     Returns:
         List of dicts (sorted by RRF score) with keys:
-            - document (str): Chunk text.
-            - metadata (dict): Section, source, and chunk index fields.
-            - distance (float): The L2 distance (if found by vector search).
+            - ``document`` (str): Chunk text.
+            - ``metadata`` (dict): Section, source, and chunk index fields.
+            - ``distance`` (float): The L2 distance (if found by vector search).
     """
+    settings = get_settings()
+    if distance_threshold is None:
+        distance_threshold = settings.rag_distance_threshold
+
     try:
         store = get_vector_store(table_name="policy_chunks", id_field="id")
         embed_fn = EmbeddingFactory.get_embedding_function()
-        query_embedding = embed_fn([query])[0]
+        query_embedding = await embed_fn([query])
+        query_embedding = query_embedding[0]
 
         return await store.hybrid_search(
             query=query,

@@ -2,8 +2,9 @@
 Tests for app.agent.tools.policy_rag module.
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.agent.tools.policy_rag import query_policy
 

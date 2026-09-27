@@ -1,6 +1,7 @@
-import pytest
 import uuid
 from unittest.mock import patch
+
+import pytest
 
 
 @pytest.mark.asyncio

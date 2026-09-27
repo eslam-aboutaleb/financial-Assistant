@@ -22,14 +22,14 @@ import asyncio
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response, status
 import litellm
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 
-from app.agent.agent import run_agent, reset_user_session
+from app.agent.agent import reset_user_session, run_agent
 from app.agent.conversation_store import save_conversation_turn
 from app.auth import get_current_user
 from app.config import Settings, get_settings
-from app.idempotency import store_response, idempotent_endpoint
+from app.idempotency import idempotent_endpoint
 from app.rate_limiter import limiter
 from app.schemas.models import ChatRequest, ChatResponse, ErrorResponse
 
@@ -97,7 +97,7 @@ async def chat(  # noqa: PLR0913, PLR0917
     1. Idempotency check -- return cached response if explicit Idempotency-Key was supplied.
     2. Session lookup or initialization for ``current_user_id``.
     3. Model invocation via Google ADK & LiteLLM routing.
-    4. Tool execution (Policy RAG, Claim Status, Claim Submission) as needed.
+    4. Tool execution (Policy RAG, Claim Status, Claim Preparation) as needed.
     5. Synthesis of grounded response with citations.
     6. Cache the response under the idempotency key for retry safety (if supplied).
 
@@ -106,16 +106,7 @@ async def chat(  # noqa: PLR0913, PLR0917
         and tool call traces. Replayed (cached) responses are indicated by
         the ``X-Idempotent-Replayed: true`` header.
     """
-    if payload.user_id and payload.user_id != current_user_id:
-        logger.warning(
-            "Request body user_id '%s' differs from authenticated user '%s'; "
-            "using authenticated user.",
-            payload.user_id,
-            current_user_id,
-        )
-        effective_user_id = current_user_id
-    else:
-        effective_user_id = payload.user_id or current_user_id
+    effective_user_id = current_user_id
 
     try:
         try:
@@ -147,6 +138,12 @@ async def chat(  # noqa: PLR0913, PLR0917
             current_user_id,
             e,
         )
+        if await request.is_disconnected():
+            logger.info("Client disconnected during chat processing for user '%s'", current_user_id)
+            raise HTTPException(
+                status_code=499,
+                detail="Client disconnected",
+            ) from None
         # Always return a generic, user-friendly error message.
         # Internal details are logged server-side only.
         error_detail = (
@@ -175,11 +172,6 @@ async def chat(  # noqa: PLR0913, PLR0917
             tool_calls=result.get("tool_calls", []),
         )
     )
-
-    # Cache the successful response for idempotent retries (only if key supplied)
-    if idempotency_key:
-        store_response(idempotency_key, chat_response.model_dump())
-        response.headers["X-Idempotency-Key"] = idempotency_key
 
     return chat_response
 

@@ -56,5 +56,5 @@ async def test_save_conversation_turn_extends_existing():
             tool_calls=[{"name": "test"}],
         )
 
-        assert len(mock_conv.messages) == 2
+        assert mock_session.add.call_count == 2
         assert mock_session.commit.called

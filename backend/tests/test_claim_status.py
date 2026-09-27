@@ -1,8 +1,10 @@
-import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
-from app.agent.tools.claim_status import get_claim_status
-from app.agent.context import current_user_id
 import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.agent.context import current_user_id
+from app.agent.tools.claim_status import get_claim_status
 
 
 @pytest.mark.asyncio

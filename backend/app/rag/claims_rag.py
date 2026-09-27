@@ -10,18 +10,20 @@ import logging
 import uuid
 from typing import Any
 
+from app.config import get_settings
 from app.database import async_session_factory
-from app.rag.vector_store import get_vector_store
 from app.rag.embedding import EmbeddingFactory
+from app.rag.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 async def retrieve_claims_hybrid(
     query: str,
     user_id: uuid.UUID,
     n_results: int = 5,
-    distance_threshold: float = 1.3,
+    distance_threshold: float | None = None,
 ) -> list[dict[str, Any]]:
     """Hybrid search for claims belonging to a specific user.
 
@@ -32,14 +34,19 @@ async def retrieve_claims_hybrid(
         user_id: UUID of the claim owner.
         n_results: Maximum number of results.
         distance_threshold: Maximum L2 distance for vector search.
+            If None, reads from settings.rag_distance_threshold.
 
     Returns:
         List of result dicts with document, metadata, distance, _rrf_score.
     """
+    if distance_threshold is None:
+        distance_threshold = settings.rag_distance_threshold
+
     try:
         store = get_vector_store(table_name="claims", id_field="id")
         embed_fn = EmbeddingFactory.get_embedding_function()
-        query_embedding = embed_fn([query])[0]
+        query_embedding = await embed_fn([query])
+        query_embedding = query_embedding[0]
 
         return await store.hybrid_search(
             query=query,
@@ -64,43 +71,58 @@ async def ingest_claim(  # noqa: PLR0913, PLR0917
     status: str,
     amount: float,
 ):
-    """Ingest a single claim into the vector store.
+    """Ingest a single claim into the vector store for hybrid search retrieval.
+
+    Constructs a searchable text representation of the claim, generates an
+    embedding, and upserts the document into the ``claims`` table with
+    metadata for filtering and display.
 
     Args:
-        claim_id: Unique claim identifier.
-        owner_id: UUID of the claim owner.
-        claim_type: Type of claim.
-        description: Claim description text.
-        policy_number: Associated policy number.
-        status: Current claim status.
-        amount: Claim amount.
+        claim_id: Unique claim identifier (e.g., "CLM-8821").
+        owner_id: UUID of the claim owner. Used as the document ID for
+            user-scoped retrieval.
+        claim_type: Category of the claim (e.g., "Water Damage").
+        description: Detailed description of the claim incident.
+        policy_number: The policyholder's policy number.
+        status: Current processing status of the claim.
+        amount: Claimed amount in US dollars.
     """
     embed_fn = EmbeddingFactory.get_embedding_function()
     text_content = f"Claim {claim_id}: {claim_type} - {description}"
-    embedding = embed_fn([text_content])[0]
+    embedding = await embed_fn([text_content])
+    embedding = embedding[0]
 
     store = get_vector_store(table_name="claims", id_field="id")
     await store.upsert(
         documents=[
             {
-                "id": claim_id,
+                "id": str(owner_id),
                 "text": text_content,
                 "embedding": embedding,
-                "claim_id": claim_id,
-                "policy_number": policy_number,
-                "claim_type": claim_type,
-                "status": status,
-                "amount": amount,
-                "description": description,
-                "owner_id": str(owner_id),
+                "metadata": {
+                    "claim_id": claim_id,
+                    "policy_number": policy_number,
+                    "claim_type": claim_type,
+                    "status": status,
+                    "amount": amount,
+                    "description": description,
+                    "owner_id": str(owner_id),
+                },
             }
         ],
     )
 
 
 async def ingest_all_claims():
-    """Ingest all claims from the database into the vector store."""
+    """Ingest all claims from the database into the vector store.
+
+    Fetches every claim record and calls ``ingest_claim`` for each one.
+    This is intended for bulk re-indexing scenarios (e.g., after schema
+    changes or embedding model updates). For incremental updates, call
+    ``ingest_claim`` directly when a new claim is created.
+    """
     from sqlalchemy import select  # noqa: PLC0415
+
     from app.models.claim import Claim  # noqa: PLC0415
 
     async with async_session_factory() as session:

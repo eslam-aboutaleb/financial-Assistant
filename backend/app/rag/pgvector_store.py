@@ -128,23 +128,32 @@ class PgVectorStore:
 
         embed_fn = EmbeddingFactory.get_embedding_function()
         if not embedding:
-            embedding = embed_fn([query])[0]
+            embedding_list = await embed_fn([query])
+            embedding = embedding_list[0]
 
         embedding_str = f"[{','.join(str(x) for x in embedding)}]"
         metadata_fields = metadata_fields or []
 
         # Build SELECT clause for metadata fields so they are returned in
-        # both the vector and keyword CTEs.
+        # both the vector and keyword CTEs. This ensures metadata is available
+        # regardless of which search method found the document.
         meta_select = ", ".join(metadata_fields) if metadata_fields else ""
         if metadata_fields:
+            # Build COALESCE expressions to prefer vector search results for
+            # metadata fields, falling back to keyword search results when
+            # the vector search did not find a match.
             meta_coalesce = ", ".join(f"v.{f}, k.{f}" for f in metadata_fields)
         else:
             meta_coalesce = ""
 
-        # Build JOIN condition between the two CTEs.
+        # Build JOIN condition between the two CTEs. The primary join is on
+        # the document ID field, with optional additional filters applied
+        # to both sides to ensure consistent scoping.
         join_conditions = [f"v.{self.id_field} = k.{self.id_field}"]
 
         # Build query parameters and WHERE fragments from validated filters.
+        # All user-supplied values are bound as parameters to prevent SQL
+        # injection; only pre-validated identifiers are interpolated.
         params: dict[str, Any] = {
             "query": query,
             "embedding": embedding_str,
@@ -273,7 +282,7 @@ class PgVectorStore:
         documents: list[dict[str, Any]],
         text_field: str = "text",
         embedding_field: str = "embedding",
-        id_field: str = "id",
+        id_field: str | None = None,
         extra_fields: dict[str, Any] | None = None,
     ) -> None:
         """Upsert documents into the store.
@@ -287,7 +296,8 @@ class PgVectorStore:
                 embedding. Metadata keys are included as additional columns.
             text_field: Name of the text column. Defaults to "text".
             embedding_field: Name of the embedding column. Defaults to "embedding".
-            id_field: Name of the primary key column. Defaults to "id".
+            id_field: Name of the primary key column. Defaults to the store's
+                configured ``id_field``.
             extra_fields: Additional static fields to include in every INSERT
                 (e.g., ``{"owner_id": "..."}``).
 
@@ -297,6 +307,8 @@ class PgVectorStore:
         """
         _validate_identifier(text_field, "text_field")
         _validate_identifier(embedding_field, "embedding_field")
+        if id_field is None:
+            id_field = self.id_field
         _validate_identifier(id_field, "id_field")
         if extra_fields:
             for key in extra_fields:

@@ -21,14 +21,13 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from app.agent.agent import configure_llm
 from app.api.v1.router import router as v1_router
 from app.config import get_settings
-from app.agent.agent import configure_llm
-from app.rag.ingest import ingest_policy
-from app.schemas.models import ErrorDetail, ErrorResponse
-from app.rate_limiter import limiter
 from app.middleware import RequestSizeLimitMiddleware
-
+from app.rag.ingest import ingest_policy
+from app.rate_limiter import limiter
+from app.schemas.models import ErrorDetail, ErrorResponse
 
 # Load centralized settings
 settings = get_settings()
@@ -47,6 +46,10 @@ async def _run_alembic_migrations() -> None:
     Runs ``alembic upgrade head`` in a subprocess so that the migration
     environment can safely import application settings and models without
     conflicting with the running Uvicorn event loop.
+
+    Raises:
+        RuntimeError: If migrations fail. This causes the application to
+            fail fast rather than running with a mismatched schema.
     """
     backend_dir = Path(__file__).resolve().parents[1]
     try:
@@ -63,13 +66,16 @@ async def _run_alembic_migrations() -> None:
             if result.stdout.strip():
                 logger.debug("Alembic output: %s", result.stdout.strip())
         else:
-            logger.error(
+            error_msg = (
                 "Alembic migration failed with exit code %s: %s",
                 result.returncode,
                 result.stderr.strip(),
             )
+            logger.error(*error_msg)
+            raise RuntimeError(f"Database migration failed: {result.stderr.strip()}")
     except Exception as e:
         logger.error("Failed to run database migrations: %s", e)
+        raise RuntimeError(f"Failed to run database migrations: {e}") from e
 
 
 @asynccontextmanager

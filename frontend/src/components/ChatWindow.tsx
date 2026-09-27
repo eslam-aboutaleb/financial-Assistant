@@ -38,7 +38,7 @@ export default function ChatWindow({
     showScrollButton,
     hasError,
     isReadOnly,
-    chatMutation,
+    isStreaming,
     scrollToBottom,
     handleScroll,
     handleSendMessage,
@@ -114,7 +114,7 @@ export default function ChatWindow({
                 onRetry={hasError ? handleRetryLast : undefined}
               />
             ))}
-            {chatMutation.isPending && !isReadOnly && (
+            {isStreaming && !isReadOnly && (
               <div
                 id="loading-indicator"
                 className="flex justify-start animate-fade-in"
@@ -178,17 +178,14 @@ export default function ChatWindow({
           </div>
         ) : (
           <div className="max-w-3xl mx-auto">
-            <ChatInput
-              onSend={handleSendMessage}
-              isLoading={chatMutation.isPending}
-            />
+            <ChatInput onSend={handleSendMessage} isLoading={isStreaming} />
             <div className="flex items-center justify-between mt-2.5 px-1">
               <div className="text-center text-[11px] text-insurance-ink-tertiary flex-1">
                 AI-generated information. Verify important coverage and claim
                 details against your policy or insurer.
               </div>
               <div className="flex items-center gap-3">
-                {chatMutation.isPending && (
+                {isStreaming && (
                   <button
                     onClick={handleStopGeneration}
                     className="flex items-center gap-1.5 text-xs text-insurance-error hover:text-insurance-ink transition-colors"
@@ -198,7 +195,7 @@ export default function ChatWindow({
                     <span>Stop</span>
                   </button>
                 )}
-                {!chatMutation.isPending && hasError && (
+                {!isStreaming && hasError && (
                   <button
                     onClick={handleRetryLast}
                     className="flex items-center gap-1.5 text-xs text-insurance-info hover:text-insurance-ink transition-colors"

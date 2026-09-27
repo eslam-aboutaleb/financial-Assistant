@@ -10,15 +10,29 @@ for pgvector hybrid retrieval.
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import Column, String, Integer, Text, Index
-from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
+
 from pgvector.sqlalchemy import Vector
+from sqlalchemy import Column, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
 
 from app.models.base import Base
 
 
 class PolicyChunk(Base):
-    """Database model for a chunk of an ingested policy document."""
+    """Database model for a chunk of an ingested policy document.
+
+    Attributes:
+        id: Primary key UUID.
+        chunk_id: Unique string identifier for the chunk (e.g., "policy_chunk_0").
+        text: The raw text content of the policy chunk.
+        section: The Markdown section header this chunk belongs to
+            (e.g., "Home Water Damage Coverage").
+        source: The source filename the chunk was extracted from.
+        chunk_index: Zero-based index of the chunk within the document.
+        sub_chunk_index: Zero-based index of the sub-chunk within a section.
+        tsvector: PostgreSQL tsvector for BM25 full-text search over the chunk text.
+        embedding: pgvector embedding of the chunk text for hybrid retrieval.
+    """
 
     __tablename__ = "policy_chunks"
 

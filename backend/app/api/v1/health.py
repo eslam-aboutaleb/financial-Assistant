@@ -9,8 +9,8 @@ import logging
 from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
-from app.schemas.models import HealthResponse
 from app.database import engine
+from app.schemas.models import HealthResponse
 
 logger = logging.getLogger(__name__)
 

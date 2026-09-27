@@ -144,6 +144,10 @@ rules/
 .playwright-mcp/*
 !.playwright-mcp/.gitkeep
 
+# Playwright reports and results
+playwright-report/
+test-results/
+
 # ------------------------------------------------------------------------------
 # Log Files
 # ------------------------------------------------------------------------------

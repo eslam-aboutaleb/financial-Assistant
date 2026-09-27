@@ -8,11 +8,11 @@ Tests horizontal privilege escalation (IDOR) by verifying that:
 4. RAG-based claims search is scoped to current user
 """
 
-import pytest
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import UTC
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 
 # ============================================================================
 # Setup: Create two distinct users and their tokens
@@ -65,8 +65,8 @@ class TestClaimIDOR:
     @pytest.mark.asyncio
     async def test_user_b_cannot_check_user_a_claim_status(self):
         """User B's token cannot retrieve User A's claim status."""
-        from app.agent.tools.claim_status import get_claim_status
         from app.agent.context import current_user_id
+        from app.agent.tools.claim_status import get_claim_status
 
         # Set context to User B
         uuid.UUID("00000000-0000-0000-0000-000000000002")
@@ -89,8 +89,8 @@ class TestClaimIDOR:
     @pytest.mark.asyncio
     async def test_user_b_cannot_submit_claim_as_user_a(self):
         """Submit claim sets owner to current user, cannot spoof another user."""
-        from app.agent.tools.submit_claim import submit_claim
         from app.agent.context import current_user_id
+        from app.agent.tools.submit_claim import prepare_claim_submission
 
         # Set context to User B
         user_b_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
@@ -103,7 +103,7 @@ class TestClaimIDOR:
             patch("app.rag.claims_rag.ingest_claim"),
         ):
             mock_factory.return_value.__aenter__.return_value = mock_session
-            result = await submit_claim(
+            result = await prepare_claim_submission(
                 policy_number="POL-1092",
                 claim_type="Water Damage",
                 amount=500.0,
@@ -114,13 +114,13 @@ class TestClaimIDOR:
         assert result["success"] is True
         # Verify the new claim was added with User B as owner
         added_claim = mock_session.add.call_args[0][0]
-        assert str(added_claim.owner_id) == str(user_b_id)
+        assert str(added_claim.user_id) == str(user_b_id)
 
     @pytest.mark.asyncio
     async def test_search_claims_does_not_leak_other_users_claims(self):
         """Claims search only returns claims owned by current user."""
-        from app.agent.tools.search_claims import search_claims
         from app.agent.context import current_user_id
+        from app.agent.tools.search_claims import search_claims
 
         # Set context to User B
         user_b_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
@@ -182,7 +182,8 @@ class TestChatIDOR:
 
     def test_conversation_list_scoped_to_authenticated_user(self, test_client):
         """List conversations returns only current user's conversations."""
-        from unittest.mock import AsyncMock, patch, MagicMock
+        from unittest.mock import AsyncMock, MagicMock, patch
+
         from app.auth import get_current_user
         from app.main import app
 
@@ -234,9 +235,11 @@ class TestTokenForgery:
 
     def test_expired_token_rejected(self, test_client):
         """Chat endpoint rejects expired JWT tokens."""
-        import jwt
-        from app.auth import SECRET_KEY, ALGORITHM
         from datetime import datetime, timedelta
+
+        import jwt
+
+        from app.auth import ALGORITHM, SECRET_KEY
 
         expired_payload = {
             "sub": str(uuid.uuid4()),
@@ -252,8 +255,9 @@ class TestTokenForgery:
 
     def test_wrong_secret_token_rejected(self, test_client):
         """Chat endpoint rejects tokens signed with wrong secret."""
-        import jwt
         from datetime import datetime, timedelta
+
+        import jwt
 
         wrong_secret_payload = {
             "sub": str(uuid.uuid4()),
@@ -273,9 +277,11 @@ class TestTokenForgery:
 
     def test_token_without_sub_rejected(self, test_client):
         """Chat endpoint rejects tokens missing 'sub' claim."""
-        import jwt
-        from app.auth import SECRET_KEY, ALGORITHM
         from datetime import datetime, timedelta
+
+        import jwt
+
+        from app.auth import ALGORITHM, SECRET_KEY
 
         no_sub_payload = {
             "exp": datetime.now(tz=UTC) + timedelta(hours=1),
@@ -290,9 +296,11 @@ class TestTokenForgery:
 
     def test_nonexistent_user_token_clears_cookie_and_rejects(self, test_client):
         """Token for non-existent user returns 401 and clears cookie."""
-        import jwt
-        from app.auth import SECRET_KEY, ALGORITHM
         from datetime import datetime, timedelta
+
+        import jwt
+
+        from app.auth import ALGORITHM, SECRET_KEY
 
         # Create a valid token for a UUID that doesn't exist in DB
         fake_user_id = str(uuid.uuid4())

@@ -7,22 +7,32 @@
  *
  * Usage:
  *   Import ``useAuth`` in any client component to access the auth context:
- *     const { token, userId, login, logout } = useAuth();
+ *     const { token, userId, status, login, logout } = useAuth();
  *
  * Lifecycle:
- *   - On mount, the context hydrates state from localStorage.
+ *   - On mount, the context hydrates state from localStorage and validates
+ *     the session via ``GET /api/v1/auth/me``.
+ *   - ``status`` reflects the auth state: ``"loading"``, ``"authenticated"``,
+ *     or ``"unauthenticated"``.
  *   - ``login`` stores the new token and user ID in both React state and
  *     localStorage.
  *   - ``logout`` clears both and triggers a toast notification.
  */
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
 import { toast } from "react-hot-toast";
+import { getCurrentUser } from "@/lib/api";
 
 interface AuthContextType {
   token: string | null;
   userId: string | null;
-  isLoaded: boolean;
+  status: "loading" | "authenticated" | "unauthenticated";
   login: (token: string, userId: string) => void;
   logout: () => Promise<void>;
 }
@@ -51,13 +61,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("omnicare_user_id");
     return null;
   });
-  const [isLoaded] = useState(true);
+  const [status, setStatus] = useState<
+    "loading" | "authenticated" | "unauthenticated"
+  >("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrate() {
+      try {
+        await getCurrentUser(token);
+        if (!cancelled) {
+          setStatus("authenticated");
+        }
+      } catch {
+        if (!cancelled) {
+          setStatus("unauthenticated");
+          localStorage.removeItem("omnicare_token");
+          localStorage.removeItem("omnicare_user_id");
+          setToken(null);
+          setUserId(null);
+        }
+      }
+    }
+
+    hydrate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const login = (newToken: string, newUserId: string) => {
     localStorage.setItem("omnicare_token", newToken);
     localStorage.setItem("omnicare_user_id", newUserId);
     setToken(newToken);
     setUserId(newUserId);
+    setStatus("authenticated");
   };
 
   const logout = async () => {
@@ -75,11 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("omnicare_user_id");
     setToken(null);
     setUserId(null);
+    setStatus("unauthenticated");
     toast.success("Logged out successfully", { id: "Logged out successfully" });
   };
 
   return (
-    <AuthContext.Provider value={{ token, userId, isLoaded, login, logout }}>
+    <AuthContext.Provider value={{ token, userId, status, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

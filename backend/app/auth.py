@@ -20,24 +20,24 @@ Security design decisions:
 
 from __future__ import annotations
 
-import uuid
 import datetime
+import uuid
 
 import jwt
-from fastapi import HTTPException, Request, Response, status, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends, HTTPException, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
-from app.models.user import User
 from app.agent.context import current_user_id
 
 # JWT configuration. ``JWT_SECRET_KEY`` must be set in production; the
 # fallback value is for local development only.
 from app.config import settings
+from app.database import get_db
+from app.models.user import User
 
 SECRET_KEY = settings.jwt_secret_key
 ALGORITHM = "HS256"

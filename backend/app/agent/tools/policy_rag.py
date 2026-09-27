@@ -9,12 +9,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.config import get_settings
 from app.rag.retriever import retrieve_hybrid
 
-# Distance threshold calibrated for all-MiniLM-L6-v2 on insurance text.
-# Queries with no relevant policy match return an empty context rather than
-# noise chunks, preventing the LLM from fabricating coverage details.
-_DISTANCE_THRESHOLD = 1.3
+settings = get_settings()
 
 
 async def query_policy(query: str) -> dict[str, Any]:
@@ -50,7 +48,7 @@ async def query_policy(query: str) -> dict[str, Any]:
     results = await retrieve_hybrid(
         query=query,
         n_results=5,
-        distance_threshold=_DISTANCE_THRESHOLD,
+        distance_threshold=settings.rag_distance_threshold,
     )
 
     if not results:

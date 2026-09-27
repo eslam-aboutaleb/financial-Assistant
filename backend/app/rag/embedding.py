@@ -12,9 +12,16 @@ Why a factory instead of direct instantiation?
   - Keeps the client creation code clean and testable.
 """
 
+from __future__ import annotations
+
+import asyncio
+import logging
+
 import litellm
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class LitellmEmbeddingFunction:
@@ -28,15 +35,8 @@ class LitellmEmbeddingFunction:
         self.api_key = api_key
         self.model_name = model_name
 
-    def __call__(self, input: list[str]) -> list[list[float]]:
-        """Embed a list of text strings.
-
-        Args:
-            input: List of text strings to embed.
-
-        Returns:
-            List of embedding vectors (each a list of floats).
-        """
+    def _embed_sync(self, input: list[str]) -> list[list[float]]:
+        """Synchronous embedding call (runs in threadpool)."""
         response = litellm.embedding(
             model=self.model_name,
             input=input,
@@ -44,8 +44,19 @@ class LitellmEmbeddingFunction:
         )
         return [item["embedding"] for item in response.data]
 
-    def embed_query(self, input: str | list[str]) -> list[float]:
-        """Embed a single query string.
+    async def __call__(self, input: list[str]) -> list[list[float]]:
+        """Embed a list of text strings asynchronously.
+
+        Args:
+            input: List of text strings to embed.
+
+        Returns:
+            List of embedding vectors (each a list of floats).
+        """
+        return await asyncio.to_thread(self._embed_sync, input)
+
+    async def embed_query(self, input: str | list[str]) -> list[float]:
+        """Embed a single query string asynchronously.
 
         Args:
             input: Query string or list containing one string.
@@ -55,11 +66,11 @@ class LitellmEmbeddingFunction:
         """
         if isinstance(input, str):
             input = [input]
-        result = self(input)
+        result = await self(input)
         return result[0]
 
-    def embed_documents(self, input: list[str]) -> list[list[float]]:
-        """Embed a list of document strings.
+    async def embed_documents(self, input: list[str]) -> list[list[float]]:
+        """Embed a list of document strings asynchronously.
 
         Args:
             input: List of document text strings.
@@ -67,7 +78,7 @@ class LitellmEmbeddingFunction:
         Returns:
             List of embedding vectors.
         """
-        return self(input)
+        return await self(input)
 
 
 class EmbeddingFactory:

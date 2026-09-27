@@ -69,3 +69,6 @@ ignore = [
 "app/rag/pgvector_store.py" = [
     "S608",
 ]
+"alembic/versions/*.py" = [
+    "E501",
+]

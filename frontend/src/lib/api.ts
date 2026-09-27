@@ -13,17 +13,29 @@
  */
 
 import { ChatResponse, ADKSSEEvent } from "@/types/chat";
+import {
+  ChatResponseSchema,
+  ConversationMetaSchema,
+  ConversationDetailSchema,
+  UserMeSchema,
+} from "@/lib/validation";
+import { z } from "zod";
 
-/**
- * Generate a cryptographically random idempotency key.
- *
- * Uses ``crypto.randomUUID`` when available (modern browsers and Node 19+),
- * falling back to a timestamp + random string for older environments.
- *
- * The key is sent as the ``Idempotency-Key`` header on chat requests so
- * that the backend can deduplicate retries without affecting legitimate
- * repeated requests (we do NOT key on user_id + message).
- */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+function getApiUrl(): string {
+  return import.meta.env.VITE_API_URL || "http://localhost:8000";
+}
+
 function generateIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -31,181 +43,300 @@ function generateIdempotencyKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
-/**
- * Send a chat message to the OmniCare backend.
- *
- * Automatically generates an idempotency key for safe retries. The backend
- * caches the response for this key, so network retries (handled by React
- * Query) will not trigger duplicate LLM calls.
- *
- * @param token - The JWT access token for authentication, or null for
- *   unauthenticated requests (currently all chat requests require auth).
- * @param message - The user's chat message text.
- * @returns The structured chat response from the backend.
- * @throws Error if the backend returns a non-ok response, with the error
- *   message extracted from the response body when available.
- */
-export async function sendMessage(
-  token: string | null,
-  message: string,
-): Promise<ChatResponse> {
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
-  const idempotencyKey = generateIdempotencyKey();
-
-  const response = await fetch(`${apiUrl}/api/v1/chat`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": idempotencyKey,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ message }),
-  });
-
+async function parseResponse<T>(
+  response: Response,
+  schema: (data: unknown) => T,
+): Promise<T> {
+  const data = await response.json();
   if (response.ok) {
-    return response.json();
+    return schema(data);
   }
 
   let errorMessage = "Something went wrong. Please try again later.";
+  let errorCode: string | undefined;
+
   try {
-    const errorData = await response.json();
-    if (errorData.error?.message) {
-      errorMessage = errorData.error.message;
-    } else if (errorData.detail) {
-      errorMessage = errorData.detail;
+    if (data?.error?.message) {
+      errorMessage = data.error.message;
+    } else if (data?.detail) {
+      errorMessage = data.detail;
     }
+    errorCode = data?.error?.code;
   } catch {
     // Body was not JSON
   }
 
   if (response.status === 401) {
     errorMessage = "Session expired. Please log in again.";
+    errorCode = "UNAUTHORIZED";
   }
 
-  throw new Error(errorMessage);
+  throw new ApiError(errorMessage, response.status, errorCode);
+}
+
+function buildAuthHeaders(token: string | null): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+/**
+ * Send a chat message to the OmniCare backend.
+ */
+export async function sendMessage(
+  token: string | null,
+  message: string,
+  signal?: AbortSignal,
+  idempotencyKey?: string,
+): Promise<ChatResponse> {
+  const apiUrl = getApiUrl();
+  const key = idempotencyKey ?? generateIdempotencyKey();
+
+  try {
+    const response = await fetch(`${apiUrl}/api/v1/chat`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        ...buildAuthHeaders(token),
+        "Idempotency-Key": key,
+      },
+      body: JSON.stringify({ message }),
+      signal,
+    });
+
+    if (response.ok) {
+      return parseResponse(response, ChatResponseSchema.parse);
+    }
+    throw await parseResponse(response, (d) => d);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    if ((error as Error).name === "AbortError") {
+      throw new ApiError("Request cancelled", 0, "CANCELLED");
+    }
+    throw new ApiError(
+      "Something went wrong. Please try again later.",
+      0,
+      "NETWORK_ERROR",
+    );
+  }
 }
 
 /**
  * Reset the current user's chat session on the backend.
- *
- * Clears the ADK InMemorySessionService so the next message starts a fresh
- * conversation context. Does not delete conversation history from Postgres.
- *
- * @param token - The JWT access token for authentication.
  */
 export async function resetChat(token: string | null): Promise<void> {
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
+  const apiUrl = getApiUrl();
 
-  await fetch(`${apiUrl}/api/v1/chat/reset`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
+  try {
+    const response = await fetch(`${apiUrl}/api/v1/chat/reset`, {
+      method: "POST",
+      credentials: "include",
+      headers: buildAuthHeaders(token),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new ApiError(
+        data?.detail ||
+          data?.error?.message ||
+          "Something went wrong. Please try again later.",
+        response.status,
+      );
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if ((error as Error).name === "AbortError") {
+      throw new ApiError("Request cancelled", 0, "CANCELLED");
+    }
+    throw new ApiError(
+      "Something went wrong. Please try again later.",
+      0,
+      "NETWORK_ERROR",
+    );
+  }
 }
 
 /**
  * Fetch the list of past conversations for the authenticated user.
- *
- * @param token - The JWT access token for authentication.
- * @returns The conversation list response from the backend.
- * @throws Error if the request fails.
  */
-export async function getConversations(token: string) {
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
-  const response = await fetch(`${apiUrl}/api/v1/chat/conversations`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok)
-    throw new Error("Something went wrong. Please try again later.");
-  return response.json();
+export async function getConversations(token: string, signal?: AbortSignal) {
+  const apiUrl = getApiUrl();
+
+  try {
+    const response = await fetch(`${apiUrl}/api/v1/chat/conversations`, {
+      credentials: "include",
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+    });
+
+    if (response.ok) {
+      return parseResponse(response, (d) => ({
+        conversations: z
+          .array(ConversationMetaSchema)
+          .parse((d as { conversations?: unknown }).conversations ?? []),
+      }));
+    }
+    throw await parseResponse(response, (d) => d);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if ((error as Error).name === "AbortError") {
+      throw new ApiError("Request cancelled", 0, "CANCELLED");
+    }
+    throw new ApiError(
+      "Something went wrong. Please try again later.",
+      0,
+      "NETWORK_ERROR",
+    );
+  }
 }
 
 /**
  * Fetch the full message history for a specific conversation.
- *
- * @param token - The JWT access token for authentication.
- * @param id - The UUID of the conversation to retrieve.
- * @returns The conversation detail response including all messages.
- * @throws Error if the request fails.
  */
-export async function getConversationHistory(token: string, id: string) {
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
-  const response = await fetch(`${apiUrl}/api/v1/chat/conversations/${id}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok)
-    throw new Error("Something went wrong. Please try again later.");
-  return response.json();
+export async function getConversationHistory(
+  token: string,
+  id: string,
+  signal?: AbortSignal,
+) {
+  const apiUrl = getApiUrl();
+
+  try {
+    const response = await fetch(`${apiUrl}/api/v1/chat/conversations/${id}`, {
+      credentials: "include",
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+    });
+
+    if (response.ok) {
+      return parseResponse(response, ConversationDetailSchema.parse);
+    }
+    throw await parseResponse(response, (d) => d);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if ((error as Error).name === "AbortError") {
+      throw new ApiError("Request cancelled", 0, "CANCELLED");
+    }
+    throw new ApiError(
+      "Something went wrong. Please try again later.",
+      0,
+      "NETWORK_ERROR",
+    );
+  }
 }
 
+/**
+ * Validate the current session by calling /api/v1/auth/me.
+ */
+export async function getCurrentUser(
+  token: string | null,
+  signal?: AbortSignal,
+) {
+  const apiUrl = getApiUrl();
+
+  try {
+    const response = await fetch(`${apiUrl}/api/v1/auth/me`, {
+      method: "GET",
+      credentials: "include",
+      headers: buildAuthHeaders(token),
+      signal,
+    });
+
+    if (response.status === 204) {
+      return null;
+    }
+
+    if (response.ok) {
+      return parseResponse(response, UserMeSchema.parse);
+    }
+    throw await parseResponse(response, (d) => d);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if ((error as Error).name === "AbortError") {
+      throw new ApiError("Request cancelled", 0, "CANCELLED");
+    }
+    throw new ApiError(
+      "Something went wrong. Please try again later.",
+      0,
+      "NETWORK_ERROR",
+    );
+  }
+}
+
+/**
+ * Stream a chat message and emit incremental text deltas.
+ */
 export async function streamMessage(
   token: string | null,
   message: string,
   onChunk: (eventData: ADKSSEEvent) => void,
+  signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<void> {
-  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
-  const idempotencyKey = generateIdempotencyKey();
+  const apiUrl = getApiUrl();
+  const key = idempotencyKey ?? generateIdempotencyKey();
 
-  const response = await fetch(`${apiUrl}/api/v1/chat/stream`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "Idempotency-Key": idempotencyKey,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify({ message }),
-  });
+  try {
+    const response = await fetch(`${apiUrl}/api/v1/chat/stream`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        ...buildAuthHeaders(token),
+        "Idempotency-Key": key,
+      },
+      body: JSON.stringify({ message }),
+      signal,
+    });
 
-  if (!response.ok) {
-    let errorMessage = "Something went wrong. Please try again later.";
-    try {
-      const errorData = await response.json();
-      errorMessage =
-        errorData.detail || errorData.error?.message || errorMessage;
-    } catch {
-      // ignore JSON error
+    if (!response.ok) {
+      throw await parseResponse(response, (d) => d);
     }
 
-    if (response.status === 401) {
-      errorMessage = "Session expired. Please log in again.";
-    }
+    const reader = response.body?.getReader();
+    if (!reader)
+      throw new ApiError("No readable stream available", 0, "NETWORK_ERROR");
 
-    throw new Error(errorMessage);
-  }
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let isDone = false;
 
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error("No readable stream available");
+    while (!isDone) {
+      const { done, value } = await reader.read();
+      isDone = done;
+      if (done) break;
 
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let isDone = false;
+      buffer += decoder.decode(value, { stream: true });
 
-  while (!isDone) {
-    const { done, value } = await reader.read();
-    isDone = done;
-    if (done) break;
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const chunk = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
 
-    buffer += decoder.decode(value, { stream: true });
-
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary !== -1) {
-      const chunk = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-
-      if (chunk.startsWith("data: ")) {
-        try {
-          const data = JSON.parse(chunk.slice(6));
-          onChunk(data);
-        } catch (e) {
-          console.error("Error parsing SSE chunk:", e);
+        if (chunk.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(chunk.slice(6));
+            onChunk(data);
+          } catch (e) {
+            console.error("Error parsing SSE chunk:", e);
+          }
         }
-      }
 
-      boundary = buffer.indexOf("\n\n");
+        boundary = buffer.indexOf("\n\n");
+      }
     }
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    if ((error as Error).name === "AbortError") {
+      throw new ApiError("Request cancelled", 0, "CANCELLED");
+    }
+    throw new ApiError(
+      "Something went wrong. Please try again later.",
+      0,
+      "NETWORK_ERROR",
+    );
   }
 }

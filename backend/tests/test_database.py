@@ -4,10 +4,11 @@ Tests for app.database module.
 Covers get_db dependency and create_all_tables.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.database import get_db, create_all_tables
+import pytest
+
+from app.database import create_all_tables, get_db
 
 
 @pytest.mark.asyncio

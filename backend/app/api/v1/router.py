@@ -16,11 +16,12 @@ at their documented paths without requiring individual route registrations.
 
 from fastapi import APIRouter
 
-from app.api.v1.health import router as health_router
-from app.api.v1.chat import router as chat_router
-from app.api.v1.conversations import router as conversations_router
-from app.api.v1.chat_stream import router as chat_stream_router
 from app.api.v1.auth import router as auth_router
+from app.api.v1.chat import router as chat_router
+from app.api.v1.chat_stream import router as chat_stream_router
+from app.api.v1.claims import router as claims_router
+from app.api.v1.conversations import router as conversations_router
+from app.api.v1.health import router as health_router
 
 router = APIRouter(prefix="/api/v1")
 
@@ -29,3 +30,4 @@ router.include_router(chat_router, tags=["Chat"])
 router.include_router(conversations_router, tags=["Conversations"])
 router.include_router(chat_stream_router, tags=["Chat"])
 router.include_router(auth_router, prefix="/auth", tags=["Authentication"])
+router.include_router(claims_router, prefix="/claims", tags=["Claims"])

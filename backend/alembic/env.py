@@ -2,23 +2,21 @@ from __future__ import annotations
 
 import asyncio
 from logging.config import fileConfig
-from pathlib import Path
 from typing import Any
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.config import get_settings
-from app.database import DATABASE_URL
-from app.models.base import Base
+import app.models.claim  # noqa: F401
+import app.models.conversation  # noqa: F401
+import app.models.policy_chunk  # noqa: F401
 
 # Import models so that Base.metadata is fully populated before migrations run.
 # These imports have no other side-effects; they are required for autogenerate.
 import app.models.user  # noqa: F401
-import app.models.claim  # noqa: F401
-import app.models.conversation  # noqa: F401
-import app.models.policy_chunk  # noqa: F401
+from alembic import context
+from app.database import DATABASE_URL
+from app.models.base import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

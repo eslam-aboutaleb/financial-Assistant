@@ -1,16 +1,17 @@
 """
-Claim submission tool for the OmniCare agent.
+Claim submission tool and internal function for the OmniCare agent.
 
-Validates inputs with Pydantic and appends new claims to Postgres securely.
-This tool is invoked by the ADK LlmAgent when the user explicitly confirms
-they want to file a new insurance claim after the required fields have been
-collected and summarized for human-in-the-loop confirmation.
+The agent-facing tool `prepare_claim_submission` validates inputs with Pydantic
+and creates a pending record in the claim_submissions table, returning a
+confirmation_token. The internal function `submit_claim_internal` performs the
+actual database write after the user has confirmed via the frontend.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -18,26 +19,27 @@ from pydantic import ValidationError
 from app.agent.context import current_user_id
 from app.database import async_session_factory
 from app.models.claim import Claim
+from app.models.claim_submission import ClaimSubmission as ClaimSubmissionModel
 from app.schemas.models import ClaimSubmission
 
 logger = logging.getLogger(__name__)
 
 
-async def submit_claim(
+async def prepare_claim_submission(
     policy_number: str,
     claim_type: str,
     amount: float,
     description: str,
 ) -> dict[str, Any]:
-    """Submit a new OmniCare insurance claim on behalf of the authenticated user.
+    """Prepare a new OmniCare insurance claim submission for confirmation.
 
-    Use this tool when the user explicitly wants to file a new claim. Collect
-    all four required fields before calling. If any field is ambiguous, confirm
-    with the user before submitting.
+    Use this tool when the user has confirmed they want to file a new claim
+    after all required fields have been collected. This tool validates the
+    inputs and creates a pending record in the database, returning a
+    confirmation_token that the frontend must present to the /confirm endpoint.
 
-    The tool validates inputs using the ``ClaimSubmission`` Pydantic schema,
-    generates a unique claim ID, persists the claim to Postgres, and returns
-    a structured confirmation response.
+    The agent should instruct the user to confirm the submission in the UI
+    after receiving the confirmation_token.
 
     Args:
         policy_number: The policyholder's policy number (e.g., "POL-1092").
@@ -46,17 +48,99 @@ async def submit_claim(
         description: Factual description of the incident (minimum 10 characters).
 
     Returns:
-        dict: Submission confirmation or error payload. On success, includes
-        ``success=True``, ``confirmation_id``, ``status``, and a ``citation``
-        string. On failure, includes ``success=False`` and an ``error`` or
-        ``validation_errors`` key.
+        dict: Preparation result. On success, includes success=True,
+        confirmation_token, expires_at, and a message instructing the user
+        to confirm. On failure, includes success=False and an error message.
     """
     try:
         user_uuid = current_user_id.get()
     except LookupError:
-        logger.error("current_user_id not found in context during claim submission.")
+        logger.error("current_user_id not found in context during claim preparation.")
         return {"success": False, "error": "Unauthorized submission."}
 
+    try:
+        validated = ClaimSubmission(
+            policy_number=policy_number,
+            claim_type=claim_type,
+            amount=amount,
+            description=description,
+        )
+    except ValidationError as exc:
+        errors = [
+            f"{err['loc'][-1] if err['loc'] else 'field'}: {err['msg']}" for err in exc.errors()
+        ]
+        logger.warning("Claim preparation validation failed: %s", errors)
+        return {"success": False, "validation_errors": errors}
+
+    confirmation_token = str(uuid.uuid4())
+    expires_at = datetime.now(UTC)
+
+    claim_data = {
+        "policy_number": validated.policy_number,
+        "claim_type": validated.claim_type,
+        "amount": str(validated.amount),
+        "description": validated.description,
+    }
+
+    try:
+        async with async_session_factory() as session:
+            submission = ClaimSubmissionModel(
+                user_id=user_uuid,
+                confirmation_token=confirmation_token,
+                claim_data=claim_data,
+                status="pending",
+                expires_at=expires_at,
+            )
+            session.add(submission)
+            await session.commit()
+    except Exception as exc:
+        logger.exception("Failed to persist pending claim submission: %s", exc)
+        return {
+            "success": False,
+            "error": "Your claim could not be prepared. Please try again or contact support.",
+        }
+
+    logger.info(
+        "Prepared claim submission for user '%s' with token '%s'.",
+        user_uuid,
+        confirmation_token,
+    )
+
+    return {
+        "success": True,
+        "confirmation_token": confirmation_token,
+        "expires_at": expires_at.isoformat(),
+        "status": "pending",
+        "message": (
+            "Your claim has been prepared. Please confirm the submission in the UI "
+            "to complete your claim."
+        ),
+    }
+
+
+async def submit_claim_internal(
+    policy_number: str,
+    claim_type: str,
+    amount: float,
+    description: str,
+    user_uuid: uuid.UUID,
+) -> dict[str, Any]:
+    """Submit a new OmniCare insurance claim on behalf of the authenticated user.
+
+    This is the internal function that performs the actual database write.
+    It is called by the /confirm endpoint after the user has confirmed the
+    submission via the frontend.
+
+    Args:
+        policy_number: The policyholder's policy number.
+        claim_type: Category of the claim.
+        amount: Claimed amount in US dollars.
+        description: Factual description of the incident.
+        user_uuid: UUID of the authenticated user.
+
+    Returns:
+        dict: Submission confirmation or error payload.
+    """
     try:
         validated = ClaimSubmission(
             policy_number=policy_number,

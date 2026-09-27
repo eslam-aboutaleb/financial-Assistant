@@ -10,8 +10,10 @@ process is skipped to avoid redundant embedding generation and storage costs.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import uuid
 from typing import Any
 
 from app.config import get_settings
@@ -64,13 +66,15 @@ def chunk_policy_document(filepath: str) -> list[dict[str, Any]]:
     The parser splits the document on Markdown ``##`` section headers to
     preserve semantic boundaries, then applies ``sliding_window_chunk`` to
     each section to create overlapping sub-chunks suitable for embedding.
+    Each chunk is assigned a unique UUID and metadata describing its position
+    within the document hierarchy.
 
     Args:
         filepath: Absolute or relative path to the Markdown policy document.
 
     Returns:
         list[dict]: A list of chunk dicts, each containing:
-            - ``id`` (str): Unique chunk identifier.
+            - ``chunk_id`` (str): Unique chunk identifier (set during ingestion).
             - ``text`` (str): The chunk text content.
             - ``metadata`` (dict): Section, source filename, and chunk indices.
         Returns an empty list if the file is not found or cannot be read.
@@ -82,7 +86,9 @@ def chunk_policy_document(filepath: str) -> list[dict[str, Any]]:
         logger.error("Policy document not found at: %s", filepath)
         return []
 
-    # Split on Markdown H2 headers to preserve section boundaries.
+    # Split on Markdown H2 headers to preserve section boundaries. The regex
+    # captures the header title in group 1, allowing us to reconstruct the
+    # document as alternating title/body pairs.
     sections = re.split(r"(?m)^##\s+(.*)$", content)
 
     preamble = sections[0].strip()
@@ -106,15 +112,19 @@ def chunk_policy_document(filepath: str) -> list[dict[str, Any]]:
         section_title = section["title"]
         section_text = section["content"]
 
+        # Reconstruct the full section text with its H2 header so that
+        # the section title is included in the chunk content for better
+        # retrieval context.
         full_text = f"## {section_title}\n\n{section_text}"
         sub_chunks = sliding_window_chunk(full_text)
 
         for sub_idx, sub_text in enumerate(sub_chunks):
             chunks.append(
                 {
-                    "id": f"policy_chunk_{global_chunk_idx}",
+                    "id": str(uuid.uuid4()),
                     "text": sub_text,
                     "metadata": {
+                        "chunk_id": f"policy_chunk_{global_chunk_idx}",
                         "section": section_title,
                         "source": source_filename,
                         "chunk_index": global_chunk_idx,
@@ -165,7 +175,8 @@ async def ingest_policy(
         return 0
 
     embed_fn = EmbeddingFactory.get_embedding_function()
-    embeddings = embed_fn([c["text"] for c in chunks])
+    texts = [c["text"] for c in chunks]
+    embeddings = await embed_fn(texts)
 
     for chunk, emb in zip(chunks, embeddings, strict=True):
         chunk["embedding"] = emb
@@ -180,6 +191,4 @@ async def ingest_policy(
 
 
 if __name__ == "__main__":
-    import asyncio
-
     asyncio.run(ingest_policy())

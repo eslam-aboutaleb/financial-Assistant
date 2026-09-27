@@ -262,6 +262,7 @@ from app.config import Settings, get_settings
 
 router = APIRouter()
 
+
 @router.get("/example")
 async def example_route(settings: Settings = Depends(get_settings)):
     return {"environment": settings.environment}

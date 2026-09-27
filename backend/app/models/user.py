@@ -9,7 +9,7 @@ to avoid accidental leakage in query logs or admin interfaces.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func, Uuid
+from sqlalchemy import DateTime, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base

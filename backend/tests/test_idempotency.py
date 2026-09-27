@@ -20,16 +20,16 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.idempotency import (
-    _TTL_SECONDS,
     _MAX_SIZE,
+    _TTL_SECONDS,
+    _cache,
+    _locks,
     cache_size,
     clear_cache,
     get_cached_response,
     make_idempotency_key,
     store_response,
-    _cache,
 )
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────────────
 
@@ -79,45 +79,46 @@ class TestCacheGetSet:
         assert get_cached_response("nonexistent-key") is None
 
     def test_stored_response_is_retrievable(self):
-        store_response("key-1", _MOCK_RESPONSE)
+        store_response("key-1", _MOCK_RESPONSE, "hash123")
         result = get_cached_response("key-1")
         assert result == _MOCK_RESPONSE
 
     def test_expired_entry_returns_none(self):
-        store_response("key-exp", _MOCK_RESPONSE)
+        store_response("key-exp", _MOCK_RESPONSE, "hash123")
         # Manually backdate the cached_at timestamp
         _cache["key-exp"]["cached_at"] = time.monotonic() - (_TTL_SECONDS + 1)
         assert get_cached_response("key-exp") is None
 
     def test_expired_entry_is_evicted_from_cache(self):
-        store_response("key-evict", _MOCK_RESPONSE)
+        store_response("key-evict", _MOCK_RESPONSE, "hash123")
         _cache["key-evict"]["cached_at"] = time.monotonic() - (_TTL_SECONDS + 1)
         get_cached_response("key-evict")  # triggers lazy eviction
         assert "key-evict" not in _cache
 
     def test_cache_size_increments(self):
         assert cache_size() == 0
-        store_response("k1", _MOCK_RESPONSE)
+        store_response("k1", _MOCK_RESPONSE, "hash123")
         assert cache_size() == 1
-        store_response("k2", _MOCK_RESPONSE)
+        store_response("k2", _MOCK_RESPONSE, "hash123")
         assert cache_size() == 2
 
     def test_clear_cache_empties_store(self):
-        store_response("k1", _MOCK_RESPONSE)
-        store_response("k2", _MOCK_RESPONSE)
+        store_response("k1", _MOCK_RESPONSE, "hash123")
+        store_response("k2", _MOCK_RESPONSE, "hash123")
         clear_cache()
         assert cache_size() == 0
+        assert len(_locks) == 0
 
     def test_fifo_eviction_at_max_size(self):
         """Oldest entry is evicted when cache reaches MAX_SIZE."""
         # Fill cache to max
         for i in range(_MAX_SIZE):
-            store_response(f"key-{i}", _MOCK_RESPONSE)
+            store_response(f"key-{i}", _MOCK_RESPONSE, "hash123")
 
         assert cache_size() == _MAX_SIZE
 
         # Insert one more; key-0 (oldest) should be gone
-        store_response("key-overflow", _MOCK_RESPONSE)
+        store_response("key-overflow", _MOCK_RESPONSE, "hash123")
         assert cache_size() == _MAX_SIZE
         assert "key-0" not in _cache
         assert "key-overflow" in _cache

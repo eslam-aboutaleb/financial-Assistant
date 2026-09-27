@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.agent.tools.search_claims import search_claims
 from app.agent.context import current_user_id
+from app.agent.tools.search_claims import search_claims
 
 
 @pytest.mark.asyncio

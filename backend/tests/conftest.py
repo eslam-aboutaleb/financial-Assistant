@@ -14,9 +14,9 @@ import shutil
 import sys
 import warnings
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
 
 
 def _in_docker() -> bool:
@@ -39,12 +39,10 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.config import settings  # noqa: E402
-
-
 # Patch ingest_policy to avoid network calls during test client startup.
 # Import and keep the real function before patching so e2e tests can use it.
 import app.main as _app_main_module  # noqa: E402, PLC0415
+from app.config import settings  # noqa: E402
 
 _real_ingest_policy = _app_main_module.ingest_policy
 _ingest_policy_patcher = patch(
@@ -108,8 +106,9 @@ def test_client(sample_claims_path):
     FastAPI TestClient fixture configured with isolated claims data.
     """
     from fastapi.testclient import TestClient  # noqa: PLC0415
-    from app.main import app  # noqa: PLC0415
+
     from app.database import engine  # noqa: PLC0415
+    from app.main import app  # noqa: PLC0415
 
     with TestClient(app) as client:
         yield client

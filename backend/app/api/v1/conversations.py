@@ -13,16 +13,16 @@ Security:
 """
 
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
-import uuid
 
 from app.auth import get_current_user
 from app.database import get_db
 from app.models.conversation import Conversation
-from app.schemas.models import ConversationListResponse, ConversationDetailResponse
+from app.schemas.models import ConversationDetailResponse, ConversationListResponse
 
 logger = logging.getLogger(__name__)
 

@@ -30,7 +30,7 @@ from app.agent.prompts import SYSTEM_INSTRUCTION
 from app.agent.tools.claim_status import get_claim_status
 from app.agent.tools.policy_rag import query_policy
 from app.agent.tools.search_claims import search_claims
-from app.agent.tools.submit_claim import submit_claim
+from app.agent.tools.submit_claim import prepare_claim_submission
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ omnicare_agent = LlmAgent(
         "OmniCare Financial customer service assistant that handles "
         "policy questions, claim lookups, and claim submissions."
     ),
-    tools=[query_policy, get_claim_status, search_claims, submit_claim],
+    tools=[query_policy, get_claim_status, search_claims, prepare_claim_submission],
 )
 
 # InMemorySessionService for conversation state (sufficient for prototype).
@@ -87,11 +87,43 @@ _MAX_SESSIONS = 500
 _user_sessions: dict[str, str] = {}
 
 
+class _StreamResult:
+    """Mutable container for collecting streaming agent results.
+
+    Passed into ``run_agent_stream`` so the caller can access the assembled
+    response after the generator is exhausted.
+
+    Attributes:
+        session_id: The ADK session identifier for this conversation.
+        final_text_parts: Accumulated text parts from the final assistant response.
+        sources: Citation sources collected from tool results (policy sections,
+            claim references).
+        tool_calls: Trace of tools invoked with arguments and execution results.
+    """
+
+    def __init__(self) -> None:
+        self.session_id: str = ""
+        self.final_text_parts: list[str] = []
+        self.sources: list[str] = []
+        self.tool_calls: list[dict] = []
+
+
 # --- Session Management --------------------------------------------------
 
 
 async def _ensure_session(user_id: str) -> str:
-    """Get or create a session for a given user, evicting the oldest if at capacity."""
+    """Get or create a session for a given user, evicting the oldest if at capacity.
+
+    Uses a FIFO eviction strategy when the maximum session count is reached.
+    Evicted sessions are also removed from the ADK InMemorySessionService to
+    prevent unbounded memory growth over long-running server uptime.
+
+    Args:
+        user_id: The authenticated user's unique identifier.
+
+    Returns:
+        str: The ADK session identifier associated with this user.
+    """
     if user_id not in _user_sessions:
         # Evict oldest entry when at capacity (FIFO -- dict preserves insertion order).
         if len(_user_sessions) >= _MAX_SESSIONS:
@@ -178,13 +210,16 @@ async def run_agent(user_id: str, message: str) -> dict[str, Any]:
     sources: list[str] = []
     tool_calls: list[dict] = []
 
-    # Run the agent and iterate through events.
+    # Run the agent and iterate through events. The ADK runner yields a stream
+    # of events representing the agent's reasoning, tool invocations, and
+    # final response. We collect all relevant data into local lists so the
+    # full response can be returned as a single dict.
     async for event in runner.run_async(
         user_id=user_id,
         session_id=session_id,
         new_message=user_content,
     ):
-        # Collect function call events (tool invocations).
+        # Collect function call events (tool invocations initiated by the agent).
         function_calls = event.get_function_calls()
         if function_calls:
             for fc in function_calls:
@@ -194,7 +229,7 @@ async def run_agent(user_id: str, message: str) -> dict[str, Any]:
                 }
                 tool_calls.append(tool_call_info)
 
-        # Collect function response events (tool results).
+        # Collect function response events (results returned by tool execution).
         function_responses = event.get_function_responses()
         if function_responses:
             for fr in function_responses:
@@ -213,13 +248,14 @@ async def run_agent(user_id: str, message: str) -> dict[str, Any]:
                 if isinstance(result, dict) and "citation" in result:
                     sources.append(result["citation"])
 
-                # Attach result to the most recent matching tool call.
+                # Attach result to the most recent matching tool call so the
+                # frontend can correlate tool invocations with their outcomes.
                 for tc in reversed(tool_calls):
                     if tc.get("name") == (fr.name if hasattr(fr, "name") else ""):
                         tc["result"] = result
                         break
 
-        # Collect final text response.
+        # Collect final text response parts from the assistant's synthesis.
         if event.is_final_response() and event.content and event.content.parts:
             for part in event.content.parts:
                 if hasattr(part, "text") and part.text:
@@ -239,7 +275,11 @@ async def run_agent(user_id: str, message: str) -> dict[str, Any]:
     }
 
 
-async def run_agent_stream(user_id: str, message: str) -> AsyncGenerator[str, None]:
+async def run_agent_stream(
+    user_id: str,
+    message: str,
+    result: _StreamResult | None = None,
+) -> AsyncGenerator[str, None]:
     """
     Run the OmniCare agent and stream results as Server-Sent Events (SSE).
 
@@ -251,15 +291,18 @@ async def run_agent_stream(user_id: str, message: str) -> AsyncGenerator[str, No
     Args:
         user_id: Unique user identifier for session management.
         message: The user's chat message.
+        result: Optional ``_StreamResult`` instance to populate with the
+            assembled response after streaming completes. The caller must
+            consume the full generator before accessing this object.
 
     Yields:
         str: SSE-formatted event strings (``data: <JSON>\\n\\n``).
 
     Note:
-        The final assembled response text is computed but not returned
-        directly; it is embedded within the streamed ADK events. The
-        backend endpoint or frontend consumer must extract it from the
-        final ``is_final_response`` event.
+        The final assembled response text is computed and stored in ``result``
+        (if provided) after the stream completes. The backend endpoint or
+        frontend consumer must extract the final response from the final
+        ``is_final_response`` event.
     """
     session_id = await _ensure_session(user_id)
 
@@ -273,7 +316,6 @@ async def run_agent_stream(user_id: str, message: str) -> AsyncGenerator[str, No
         parts=[types.Part(text=message)],
     )
 
-    # We collect the full response to save to the DB at the end.
     final_text_parts: list[str] = []
     sources: list[str] = []
     tool_calls: list[dict] = []
@@ -284,13 +326,13 @@ async def run_agent_stream(user_id: str, message: str) -> AsyncGenerator[str, No
         new_message=user_content,
         run_config=RunConfig(streaming_mode=StreamingMode.SSE),
     ):
-        # Collect final text response parts.
+        # Collect final text response parts from the assistant's synthesis.
         if event.is_final_response() and event.content and event.content.parts:
             for part in event.content.parts:
                 if hasattr(part, "text") and part.text:
                     final_text_parts.append(part.text)
 
-        # Collect function call events (tool invocations).
+        # Collect function call events (tool invocations initiated by the agent).
         function_calls = event.get_function_calls()
         if function_calls:
             for fc in function_calls:
@@ -300,13 +342,13 @@ async def run_agent_stream(user_id: str, message: str) -> AsyncGenerator[str, No
                 }
                 tool_calls.append(tool_call_info)
 
-        # Collect function response events (tool results).
+        # Collect function response events (results returned by tool execution).
         function_responses = event.get_function_responses()
         if function_responses:
             for fr in function_responses:
-                result = fr.response if hasattr(fr, "response") else {}
-                if isinstance(result, dict) and "sources" in result:
-                    for src in result["sources"]:
+                result_data = fr.response if hasattr(fr, "response") else {}
+                if isinstance(result_data, dict) and "sources" in result_data:
+                    for src in result_data["sources"]:
                         if isinstance(src, dict):
                             section = src.get("section", "")
                             source_file = src.get("source", "")
@@ -314,22 +356,21 @@ async def run_agent_stream(user_id: str, message: str) -> AsyncGenerator[str, No
                         elif isinstance(src, str):
                             sources.append(src)
 
-                if isinstance(result, dict) and "citation" in result:
-                    sources.append(result["citation"])
+                if isinstance(result_data, dict) and "citation" in result_data:
+                    sources.append(result_data["citation"])
 
                 for tc in reversed(tool_calls):
                     if tc.get("name") == (fr.name if hasattr(fr, "name") else ""):
-                        tc["result"] = result
+                        tc["result"] = result_data
                         break
 
-        # Yield ADK's built-in formatted SSE JSON string.
+        # Yield ADK's built-in formatted SSE JSON string to the client.
         sse_event = event.model_dump_json(exclude_none=True, by_alias=True)
         yield f"data: {sse_event}\n\n"
 
-    # The assembled response is available here for callers that need it
-    # after the stream completes (e.g., for persistence).
-    (
-        "\n".join(final_text_parts)
-        if final_text_parts
-        else "I'm sorry, I couldn't generate a response."
-    )
+    # Populate the result container if provided.
+    if result is not None:
+        result.session_id = session_id
+        result.final_text_parts = final_text_parts
+        result.sources = sources
+        result.tool_calls = tool_calls

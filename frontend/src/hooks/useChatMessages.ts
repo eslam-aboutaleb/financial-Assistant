@@ -4,21 +4,22 @@
  * Encapsulates:
  * - Message list state
  * - Auto-scroll behavior
- * - Mutation for sending messages
- * - Retry logic
+ * - Streaming chat via SSE
+ * - Request cancellation via AbortController
+ * - Retry logic with preserved idempotency keys
  * - Keyboard shortcuts
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Message } from "@/types/chat";
+import { Message, ADKSSEEvent } from "@/types/chat";
 import {
-  sendMessage,
+  streamMessage,
   resetChat as apiResetChat,
   getConversationHistory,
+  ApiError,
 } from "@/lib/api";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
-
 import { useAuth } from "@/context/AuthContext";
 
 export function useChatMessages({
@@ -32,20 +33,20 @@ export function useChatMessages({
   onMessageSent?: () => void;
   onAuthError?: () => void;
 }) {
-  const { token } = useAuth();
+  const { token, status } = useAuth();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const idempotencyKeyRef = useRef<string>("");
+  const lastSentIdempotencyKeyRef = useRef<string | null>(null);
 
   // Load conversation history when viewing an archived chat.
-  const {
-    data: historyData,
-    isLoading: isLoadingHistory,
-    isError: isErrorHistory,
-  } = useQuery({
+  const { data: historyData, isLoading: isLoadingHistory } = useQuery({
     queryKey: ["conversation", historyId],
     queryFn: () => getConversationHistory(token!, historyId!),
     enabled: !!historyId && !!token,
@@ -53,6 +54,10 @@ export function useChatMessages({
 
   useEffect(() => {
     if (historyData?.messages) {
+      // Sync conversation history from React Query into local message state.
+      // This is an intentional side effect: we derive local UI state from
+      // an external data source (the query result), which is exactly what
+      // useEffect is designed for.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setMessages(
         historyData.messages.map(
@@ -75,45 +80,6 @@ export function useChatMessages({
       );
     }
   }, [historyData]);
-
-  // Mutation for sending new chat messages.
-  const chatMutation = useMutation({
-    mutationFn: (content: string) => sendMessage(token, content),
-    onSuccess: (data) => {
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: data.response,
-        timestamp: new Date(),
-        sources: data.sources,
-        toolCalls: data.tool_calls,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-      setHasError(false);
-      if (onMessageSent) onMessageSent();
-    },
-    onError: (error: Error) => {
-      if (
-        error.message.includes("Session expired") ||
-        error.message.includes("Sign in to continue")
-      ) {
-        onAuthError?.();
-      }
-
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "error",
-        content:
-          error.message || "Something went wrong. Please try again later.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-      setHasError(true);
-    },
-  });
-
-  const isReadOnly = !!historyId;
-  const isLoading = chatMutation.isPending || isLoadingHistory;
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -163,7 +129,7 @@ export function useChatMessages({
   }, [onNewChat]);
 
   const handleSendMessage = (content: string) => {
-    if (!content.trim()) return;
+    if (!content.trim() || status !== "authenticated") return;
     setHasError(false);
 
     const userMessage: Message = {
@@ -172,15 +138,82 @@ export function useChatMessages({
       content,
       timestamp: new Date(),
     };
-    setMessages((prev) => [...prev, userMessage]);
-    chatMutation.mutate(content);
+    const assistantId = (Date.now() + 1).toString();
+    const assistantMessage: Message = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage, assistantMessage]);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const currentIdempotencyKey = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    idempotencyKeyRef.current = currentIdempotencyKey;
+    lastSentIdempotencyKeyRef.current = currentIdempotencyKey;
+    setIsStreaming(true);
+
+    streamMessage(
+      token,
+      content,
+      (eventData) => {
+        if (eventData.type === "text_delta") {
+          const text =
+            typeof eventData.content === "string" ? eventData.content : "";
+          if (text) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: m.content + text } : m,
+              ),
+            );
+          }
+        } else if (eventData.type === "response_complete") {
+          const sources = Array.isArray(eventData.sources)
+            ? eventData.sources.filter(Boolean)
+            : [];
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantId ? { ...m, sources } : m)),
+          );
+        }
+      },
+      controller.signal,
+      currentIdempotencyKey,
+    )
+      .then(() => {
+        setIsStreaming(false);
+        setHasError(false);
+        if (onMessageSent) onMessageSent();
+      })
+      .catch((error) => {
+        setIsStreaming(false);
+        if (error instanceof ApiError && error.code === "CANCELLED") return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? { ...m, role: "error" as const, content: error.message }
+              : m,
+          ),
+        );
+        setHasError(true);
+        if (error instanceof ApiError && error.status === 401) {
+          onAuthError?.();
+        }
+      })
+      .finally(() => {
+        abortControllerRef.current = null;
+      });
   };
 
   const handleStopGeneration = useCallback(() => {
-    chatMutation.reset();
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsStreaming(false);
     toast.success("Stopped generating");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatMutation]);
+  }, []);
 
   const handleRetryLast = useCallback(() => {
     const lastUserMessageIndex = [...messages]
@@ -191,9 +224,74 @@ export function useChatMessages({
       setMessages((prev) => prev.slice(0, actualIndex + 1));
       setHasError(false);
       const lastUserMessage = messages[actualIndex];
-      chatMutation.mutate(lastUserMessage.content);
+      const retryIdempotencyKey =
+        lastSentIdempotencyKeyRef.current ??
+        `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      idempotencyKeyRef.current = retryIdempotencyKey;
+
+      const assistantId = (Date.now() + 1).toString();
+      const assistantMessage: Message = {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      streamMessage(
+        token,
+        lastUserMessage.content,
+        (eventData) => {
+          if (eventData.type === "text_delta") {
+            const text =
+              typeof eventData.content === "string" ? eventData.content : "";
+            if (text) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, content: m.content + text }
+                    : m,
+                ),
+              );
+            }
+          } else if (eventData.type === "response_complete") {
+            const sources = Array.isArray(eventData.sources)
+              ? eventData.sources.filter(Boolean)
+              : [];
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, sources } : m)),
+            );
+          }
+        },
+        controller.signal,
+        retryIdempotencyKey,
+      )
+        .then(() => {
+          setHasError(false);
+          if (onMessageSent) onMessageSent();
+        })
+        .catch((error) => {
+          if (error instanceof ApiError && error.code === "CANCELLED") return;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, role: "error" as const, content: error.message }
+                : m,
+            ),
+          );
+          setHasError(true);
+          if (error instanceof ApiError && error.status === 401) {
+            onAuthError?.();
+          }
+        })
+        .finally(() => {
+          abortControllerRef.current = null;
+        });
     }
-  }, [chatMutation, messages]);
+  }, [messages, token, onMessageSent]);
 
   const handleResetChat = useCallback(async () => {
     if (!token) return;
@@ -201,6 +299,9 @@ export function useChatMessages({
     onNewChat();
     toast.success("Chat session reset");
   }, [onNewChat, token]);
+
+  const isReadOnly = !!historyId;
+  const isLoading = status === "loading" || isLoadingHistory;
 
   return {
     messages,
@@ -211,7 +312,7 @@ export function useChatMessages({
     hasError,
     isReadOnly,
     isLoading,
-    chatMutation,
+    isStreaming,
     scrollToBottom,
     handleScroll,
     handleSendMessage,

@@ -2,8 +2,9 @@
 Additional tests for pgvector_store edge cases.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.rag.pgvector_store import PgVectorStore
 
@@ -31,7 +32,7 @@ async def test_hybrid_search_with_empty_embedding():
     with patch("app.rag.pgvector_store.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__.return_value = mock_session
         with patch("app.rag.pgvector_store.EmbeddingFactory.get_embedding_function") as mock_embed:
-            mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+            mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536])
             result = await store.hybrid_search(
                 query="test",
                 embedding=[],
@@ -63,7 +64,7 @@ async def test_hybrid_search_with_extra_where():
     with patch("app.rag.pgvector_store.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__.return_value = mock_session
         with patch("app.rag.pgvector_store.EmbeddingFactory.get_embedding_function") as mock_embed:
-            mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+            mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536])
             result = await store.hybrid_search(
                 query="test",
                 embedding=[0.1] * 1536,
@@ -113,7 +114,7 @@ async def test_hybrid_search_with_empty_metadata_fields():
     with patch("app.rag.pgvector_store.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__.return_value = mock_session
         with patch("app.rag.pgvector_store.EmbeddingFactory.get_embedding_function") as mock_embed:
-            mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+            mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536])
             result = await store.hybrid_search(
                 query="test",
                 embedding=[0.1] * 1536,
@@ -177,7 +178,7 @@ async def test_hybrid_search_metadata_field_populated():
     with patch("app.rag.pgvector_store.async_session_factory") as mock_factory:
         mock_factory.return_value.__aenter__.return_value = mock_session
         with patch("app.rag.pgvector_store.EmbeddingFactory.get_embedding_function") as mock_embed:
-            mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+            mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536])
             result = await store.hybrid_search(
                 query="test",
                 embedding=[0.1] * 1536,

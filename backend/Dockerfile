@@ -30,6 +30,8 @@ RUN rm -rf /usr/local/bin/pip* /usr/local/lib/python*/site-packages/pip*
 # Copy backend application source code
 COPY app/ ./app/
 COPY tests/ ./tests/
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 
 # Create a non-root user to run the application
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser \

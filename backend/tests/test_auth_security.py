@@ -14,21 +14,23 @@ Covers:
 """
 
 import uuid
-import pytest
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import jwt
-from datetime import datetime, timedelta, UTC
-from unittest.mock import patch, AsyncMock, MagicMock
+import pytest
+
 from app.auth import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    ALGORITHM,
+    COOKIE_NAME,
     DUMMY_PASSWORD_HASH,
-    hash_password,
-    verify_password,
-    create_access_token,
+    SECRET_KEY,
     _decode_token,
     _InvalidTokenError,
-    SECRET_KEY,
-    ALGORITHM,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    COOKIE_NAME,
+    create_access_token,
+    hash_password,
+    verify_password,
 )
 
 
@@ -81,9 +83,11 @@ class TestSignup:
 
     def test_cookie_secure_enforcement(self, test_client):
         """Session cookies should set secure=True in production."""
-        from app.auth import set_session_cookie
-        from fastapi import Response
         from unittest.mock import patch
+
+        from fastapi import Response
+
+        from app.auth import set_session_cookie
 
         # Test development (secure=False)
         with patch("app.auth.settings.environment", "dev"):
@@ -102,10 +106,12 @@ class TestSignup:
 
     def test_resolve_token_prefers_header(self):
         """_resolve_token should prefer Authorization header over cookie."""
-        from app.auth import _resolve_token
+        from unittest.mock import MagicMock
+
         from fastapi import Request
         from fastapi.security import HTTPAuthorizationCredentials
-        from unittest.mock import MagicMock
+
+        from app.auth import _resolve_token
 
         req = MagicMock(spec=Request)
         req.cookies.get.return_value = "cookie-token"
@@ -116,9 +122,11 @@ class TestSignup:
 
     def test_resolve_token_falls_back_to_cookie(self):
         """_resolve_token should fallback to cookie if Authorization header is missing."""
-        from app.auth import _resolve_token
-        from fastapi import Request
         from unittest.mock import MagicMock
+
+        from fastapi import Request
+
+        from app.auth import _resolve_token
 
         req = MagicMock(spec=Request)
         req.cookies.get.return_value = "cookie-token"
@@ -513,7 +521,7 @@ class TestChatAuthIsolation:
 
     def test_conversations_scoped_to_user(self, test_client, mock_current_user):
         """List conversations returns only current user's conversations."""
-        from unittest.mock import patch, AsyncMock, MagicMock
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         mock_conv = MagicMock()
         mock_conv.id = uuid.uuid4()
@@ -536,7 +544,7 @@ class TestChatAuthIsolation:
 
     def test_conversation_history_requires_ownership(self, test_client, mock_current_user):
         """Getting a conversation history requires the user to own it."""
-        from unittest.mock import patch, AsyncMock, MagicMock
+        from unittest.mock import AsyncMock, MagicMock, patch
 
         # Mock returning None (not found or not owned)
         with patch("app.database.async_session_factory") as mock_factory:
@@ -569,8 +577,8 @@ class TestClaimIsolation:
     @pytest.mark.asyncio
     async def test_claim_status_scoped_to_owner(self):
         """Claim status tool queries by claim_id AND owner_id."""
-        from app.agent.tools.claim_status import get_claim_status
         from app.agent.context import current_user_id
+        from app.agent.tools.claim_status import get_claim_status
 
         current_user_id.set(uuid.UUID("00000000-0000-0000-0000-000000000001"))
 
@@ -587,8 +595,8 @@ class TestClaimIsolation:
     @pytest.mark.asyncio
     async def test_claim_status_returns_found_for_owner(self):
         """Claim status returns data when user owns the claim."""
-        from app.agent.tools.claim_status import get_claim_status
         from app.agent.context import current_user_id
+        from app.agent.tools.claim_status import get_claim_status
 
         current_user_id.set(uuid.UUID("00000000-0000-0000-0000-000000000001"))
 
@@ -611,13 +619,13 @@ class TestClaimIsolation:
     @pytest.mark.asyncio
     async def test_submit_claim_requires_auth_context(self):
         """Submit claim fails when no user context is set."""
-        from app.agent.tools.submit_claim import submit_claim
         from app.agent.context import current_user_id
+        from app.agent.tools.submit_claim import prepare_claim_submission
 
         current_user_id.set(None)
         with patch("app.agent.tools.submit_claim.current_user_id") as mock_cv:
             mock_cv.get.side_effect = LookupError
-            result = await submit_claim(
+            result = await prepare_claim_submission(
                 policy_number="POL-1092",
                 claim_type="Water Damage",
                 amount=500.0,
@@ -629,8 +637,9 @@ class TestClaimIsolation:
     @pytest.mark.asyncio
     async def test_search_claims_scoped_to_current_user(self):
         """Claims search tool scopes results to current user."""
-        from app.agent.tools.search_claims import search_claims
         import inspect
+
+        from app.agent.tools.search_claims import search_claims
 
         source = inspect.getsource(search_claims)
         # Verify the tool uses current_user_id from context

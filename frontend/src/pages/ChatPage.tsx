@@ -12,10 +12,21 @@ export default function ChatPage() {
   const [chatKey, setChatKey] = useState(0);
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const { userId, isLoaded, logout, token } = useAuth();
+  const { status, logout, token } = useAuth();
 
-  if (!isLoaded) return null;
-  if (!userId) return <Navigate to="/login" replace />;
+  if (status === "loading") {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-sand-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-insurance-info border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm text-insurance-ink-secondary">
+            Loading OmniCare...
+          </span>
+        </div>
+      </div>
+    );
+  }
+  if (status !== "authenticated") return <Navigate to="/login" replace />;
 
   const handleNewChat = async () => {
     try {

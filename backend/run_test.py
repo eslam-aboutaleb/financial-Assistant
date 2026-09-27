@@ -1,17 +1,16 @@
 from fastapi.testclient import TestClient
 
+from app.auth import get_current_user
+from app.main import app
+from tests.conftest import _TEST_USER_ID
+
 
 def run():
-    from app.main import app
-    from tests.conftest import _TEST_USER_ID
-
     client = TestClient(app)
-    # mock auth
-    headers = {"Authorization": "Bearer test-token"}
     app.dependency_overrides = {}
-    from app.auth import get_current_user
-
     app.dependency_overrides[get_current_user] = lambda: _TEST_USER_ID
+
+    headers = {"Authorization": "Bearer test-token"}
 
     # We need to simulate the environment
     payload = {

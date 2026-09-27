@@ -19,20 +19,19 @@ def test_configure_llm_sets_env(monkeypatch):
     monkeypatch.setattr(
         "app.agent.agent.settings.openai_api_base", "https://test.openai.azure.com/v1"
     )
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
 
     configure_llm()
 
     assert os.environ.get("OPENAI_API_KEY") == "test-key"
     assert os.environ.get("OPENAI_API_BASE") == "https://test.openai.azure.com/v1"
 
+    os.environ.pop("OPENAI_API_KEY", None)
+    os.environ.pop("OPENAI_API_BASE", None)
+
 
 def test_configure_llm_no_key(monkeypatch):
     monkeypatch.setattr("app.agent.agent.settings.openai_api_key", None)
     monkeypatch.setattr("app.agent.agent.settings.openai_api_base", None)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_BASE", raising=False)
 
     configure_llm()
 

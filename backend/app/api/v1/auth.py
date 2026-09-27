@@ -20,6 +20,7 @@ Security notes:
 """
 
 import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
@@ -30,13 +31,14 @@ from app.auth import (
     DUMMY_PASSWORD_HASH,
     clear_session_cookie,
     create_access_token,
+    get_current_user,
     hash_password,
     set_session_cookie,
     verify_password,
 )
 from app.database import get_db
 from app.models.user import User
-from app.schemas.models import UserSignup, UserSignin, Token
+from app.schemas.models import Token, UserMe, UserSignin, UserSignup
 
 router = APIRouter()
 
@@ -135,3 +137,19 @@ async def logout(response: Response):
     clear_session_cookie(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
+
+
+@router.get("/me", response_model=UserMe)
+async def get_current_user_info(current_user_id: str = Depends(get_current_user)):
+    """Return the authenticated user's identity.
+
+    This endpoint allows the frontend to validate the session on startup
+    and refresh after page reloads without requiring a full sign-in flow.
+
+    Args:
+        current_user_id: The authenticated user's UUID (injected by dependency).
+
+    Returns:
+        UserMe: The authenticated user's ID.
+    """
+    return {"user_id": current_user_id}

@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
+from pydantic import BaseModel, ConfigDict, Field
 
 # --- Chat Schemas --------------------------------------------------------
 
@@ -30,21 +30,11 @@ class ChatRequest(BaseModel):
     """Request schema for the ``POST /api/v1/chat`` endpoint.
 
     Attributes:
-        user_id: Optional user identifier. If omitted, the authenticated
-            user from the bearer token or cookie is used.
         message: The user's incoming chat message or insurance inquiry.
             Limited to 4000 characters to prevent abuse and control token
             costs for LLM processing.
     """
 
-    user_id: str | None = Field(
-        default=None,
-        description=(
-            "Optional user identifier. "
-            "If omitted, the authenticated user from the bearer token is used."
-        ),
-        examples=["usr_123"],
-    )
     message: str = Field(
         ...,
         description="User's incoming chat message or insurance inquiry",
@@ -52,22 +42,10 @@ class ChatRequest(BaseModel):
         max_length=4000,
     )
 
-    @field_validator("user_id")
-    @classmethod
-    def validate_user_id_format(cls, value: str | None) -> str | None:
-        """Normalize the user_id field, treating empty strings as None."""
-        if value is None or value == "":
-            return None
-        value = value.strip()
-        if not value:
-            return None
-        return value
-
     model_config = ConfigDict(
         str_strip_whitespace=False,
         json_schema_extra={
             "example": {
-                "user_id": "usr_123",
                 "message": "What is covered under water damage?",
             }
         },
@@ -202,10 +180,10 @@ class ClaimSubmission(BaseModel):
         description="Category/type of insurance claim (e.g., Water Damage, Personal Property)",
         min_length=1,
     )
-    amount: float = Field(
+    amount: Decimal = Field(
         ...,
         description="Total claim amount in US dollars (must be greater than 0)",
-        gt=0,
+        gt=Decimal("0"),
     )
     description: str = Field(
         ...,
@@ -224,6 +202,69 @@ class ClaimSubmission(BaseModel):
             }
         },
     )
+
+
+# --- Claim Submission Confirmation Schema --------------------------------
+
+
+class ClaimSubmissionPrepareRequest(BaseModel):
+    """Request schema for preparing a claim submission (before confirmation).
+
+    Attributes:
+        policy_number: The policyholder's policy number.
+        claim_type: Category/type of insurance claim.
+        amount: Total claim amount in US dollars.
+        description: Detailed factual description of the incident.
+    """
+
+    policy_number: str = Field(..., min_length=1)
+    claim_type: str = Field(..., min_length=1)
+    amount: Decimal = Field(..., gt=Decimal("0"))
+    description: str = Field(..., min_length=10)
+
+
+class ClaimSubmissionPrepareResponse(BaseModel):
+    """Response schema for preparing a claim submission.
+
+    Attributes:
+        confirmation_token: UUID token the frontend must present to confirm.
+        expires_at: ISO timestamp when the token expires.
+        status: Current status of the pending submission.
+    """
+
+    confirmation_token: str = Field(..., description="Token to present at /confirm endpoint")
+    expires_at: datetime = Field(..., description="When this pending submission expires")
+    status: str = Field(default="pending", description="Current submission status")
+
+
+class ClaimConfirmationRequest(BaseModel):
+    """Request schema for confirming a claim submission.
+
+    Attributes:
+        confirmation_token: The token returned by the prepare endpoint.
+    """
+
+    confirmation_token: str = Field(
+        ...,
+        description="Confirmation token from prepare endpoint",
+        min_length=1,
+    )
+
+
+class ClaimConfirmationResponse(BaseModel):
+    """Response schema for a confirmed claim submission.
+
+    Attributes:
+        success: Whether the confirmation succeeded.
+        claim_id: The generated claim ID if successful.
+        status: Current claim status.
+        message: Human-readable confirmation message.
+    """
+
+    success: bool = Field(..., description="Whether the claim was submitted successfully")
+    claim_id: str | None = Field(default=None, description="Generated claim ID on success")
+    status: str | None = Field(default=None, description="Current claim status")
+    message: str = Field(..., description="Human-readable result message")
 
 
 # --- Authentication Schemas ----------------------------------------------
@@ -306,6 +347,16 @@ class ConversationDetailResponse(ConversationMetadata):
     """
 
     messages: list[dict[str, Any]]
+
+
+class UserMe(BaseModel):
+    """Response schema for the ``GET /api/v1/auth/me`` endpoint.
+
+    Attributes:
+        user_id: The authenticated user's UUID as a string.
+    """
+
+    user_id: str = Field(..., description="Authenticated user's UUID")
 
 
 # Rebuild models that reference uuid to resolve forward references.

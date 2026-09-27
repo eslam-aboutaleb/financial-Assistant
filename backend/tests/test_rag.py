@@ -3,13 +3,14 @@ Unit tests for the RAG ingestion and hybrid retrieval modules using the vector s
 """
 
 import uuid
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from app.rag.claims_rag import ingest_all_claims, ingest_claim, retrieve_claims_hybrid
+from app.rag.embedding import EmbeddingFactory, LitellmEmbeddingFunction
 from app.rag.ingest import chunk_policy_document, ingest_policy
 from app.rag.retriever import retrieve_hybrid
-from app.rag.claims_rag import retrieve_claims_hybrid, ingest_claim, ingest_all_claims
-from app.rag.embedding import EmbeddingFactory, LitellmEmbeddingFunction
 
 
 def test_chunk_policy_document(tmp_path):
@@ -32,7 +33,7 @@ async def test_retrieve_hybrid_exception():
         mock_store.hybrid_search.side_effect = Exception("DB error")
 
         with patch("app.rag.retriever.EmbeddingFactory.get_embedding_function") as mock_embed:
-            mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+            mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536 for _ in ["test"]])
             res = await retrieve_hybrid("test")
             assert res == []
 
@@ -58,30 +59,33 @@ async def test_retrieve_hybrid_success():
         patch("app.rag.retriever.get_vector_store", return_value=mock_store),
         patch("app.rag.retriever.EmbeddingFactory.get_embedding_function") as mock_embed,
     ):
-        mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+        mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536])
         res = await retrieve_hybrid("test")
         assert len(res) == 1
         assert res[0]["document"] == "mock document"
         assert res[0]["distance"] == 0.5
 
 
-def test_embedding_factory():
+@pytest.mark.asyncio
+async def test_embedding_factory():
     fn = EmbeddingFactory.get_embedding_function()
     assert isinstance(fn, LitellmEmbeddingFunction)
-    res = fn(["test 1", "test 2"])
+    res = await fn(["test 1", "test 2"])
     assert len(res) == 2
     assert len(res[0]) == 1536
 
 
-def test_embedding_function_embed_query():
+@pytest.mark.asyncio
+async def test_embedding_function_embed_query():
     fn = EmbeddingFactory.get_embedding_function()
-    result = fn.embed_query("test query")
+    result = await fn.embed_query("test query")
     assert len(result) == 1536
 
 
-def test_embedding_function_embed_documents():
+@pytest.mark.asyncio
+async def test_embedding_function_embed_documents():
     fn = EmbeddingFactory.get_embedding_function()
-    result = fn.embed_documents(["doc1", "doc2"])
+    result = await fn.embed_documents(["doc1", "doc2"])
     assert len(result) == 2
     assert len(result[0]) == 1536
 
@@ -134,7 +138,7 @@ async def test_ingest_policy_success():
         patch("app.rag.ingest.chunk_policy_document", return_value=chunks),
         patch("app.rag.ingest.EmbeddingFactory.get_embedding_function") as mock_embed,
     ):
-        mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+        mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536 for _ in chunks])
         count = await ingest_policy()
         assert count == len(chunks)
         mock_store.upsert.assert_called_once()
@@ -167,7 +171,7 @@ async def test_claims_rag_hybrid():
         patch("app.rag.claims_rag.get_vector_store", return_value=mock_store),
         patch("app.rag.claims_rag.EmbeddingFactory.get_embedding_function") as mock_embed,
     ):
-        mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+        mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536])
         results = await retrieve_claims_hybrid("kitchen pipe", test_user_id)
         assert len(results) > 0
         assert results[0]["metadata"]["claim_id"] == "TEST-123"
@@ -184,7 +188,7 @@ async def test_claims_rag_exception_handling():
         mock_store.hybrid_search.side_effect = Exception("DB error")
 
         with patch("app.rag.claims_rag.EmbeddingFactory.get_embedding_function") as mock_embed:
-            mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+            mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536])
             error_results = await retrieve_claims_hybrid("kitchen", test_user_id)
             assert error_results == []
 
@@ -198,7 +202,7 @@ async def test_ingest_claim():
         patch("app.rag.claims_rag.get_vector_store", return_value=mock_store),
         patch("app.rag.claims_rag.EmbeddingFactory.get_embedding_function") as mock_embed,
     ):
-        mock_embed.return_value = lambda x: [[0.1] * 1536 for _ in x]
+        mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536])
         await ingest_claim(
             claim_id="CLM-1",
             owner_id=test_user_id,
