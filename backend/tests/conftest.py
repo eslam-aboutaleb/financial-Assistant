@@ -167,6 +167,15 @@ def _reset_engine():
         print(f"[_reset_engine] post-test cleanup failed: {exc!r}")
 
 
+@pytest.fixture(scope="function", autouse=True)
+def _clear_idempotency_cache():
+    """Clear the idempotency cache between tests to ensure isolation."""
+    from app.idempotency import clear_cache  # noqa: PLC0415
+
+    yield
+    clear_cache()
+
+
 _TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 

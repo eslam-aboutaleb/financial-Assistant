@@ -96,7 +96,7 @@ async def ingest_claim(  # noqa: PLR0913, PLR0917
     await store.upsert(
         documents=[
             {
-                "id": str(owner_id),
+                "id": claim_id,
                 "text": text_content,
                 "embedding": embedding,
                 "metadata": {
@@ -106,7 +106,6 @@ async def ingest_claim(  # noqa: PLR0913, PLR0917
                     "status": status,
                     "amount": amount,
                     "description": description,
-                    "owner_id": str(owner_id),
                 },
             }
         ],

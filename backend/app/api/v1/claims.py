@@ -7,7 +7,7 @@ Provides claim status lookup and the two-step claim submission flow
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -80,7 +80,7 @@ async def prepare_claim_submission(
     claim_data["amount"] = str(claim_data["amount"])
 
     confirmation_token = str(uuid.uuid4())
-    expires_at = datetime.now(UTC)
+    expires_at = datetime.now(UTC) + timedelta(minutes=15)
 
     try:
         async with async_session_factory() as session:

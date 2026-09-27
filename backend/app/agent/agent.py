@@ -165,9 +165,23 @@ async def _ensure_session(user_id: str) -> str:
     return _user_sessions[user_id]
 
 
-def reset_user_session(user_id: str) -> None:
+async def reset_user_session(user_id: str) -> None:
     """Clear the session for a user (e.g., for 'New Chat')."""
-    _user_sessions.pop(user_id, None)
+    session_id = _user_sessions.pop(user_id, None)
+    if session_id:
+        try:
+            await session_service.delete_session(
+                app_name="omnicare_financial",
+                session_id=session_id,
+            )
+            logger.debug("Deleted session '%s' for user '%s'.", session_id, user_id)
+        except Exception:
+            logger.warning(
+                "Failed to delete session '%s' for user '%s'.",
+                session_id,
+                user_id,
+                exc_info=True,
+            )
 
 
 # --- Agent Execution -----------------------------------------------------

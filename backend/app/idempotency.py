@@ -176,11 +176,15 @@ def idempotent_endpoint() -> Callable[[F], F]:
             current_user_id = kwargs.get("current_user_id")
             payload = kwargs.get("payload")
 
+            if not idempotency_key and current_user_id and payload is not None:
+                idempotency_key = make_idempotency_key(
+                    current_user_id,
+                    payload.message if hasattr(payload, "message") else str(payload),
+                )
+
             if idempotency_key and response and current_user_id:
-                # Namespace the cache key by user to prevent cross-user hits
                 namespaced_key = f"{current_user_id}:{idempotency_key}"
 
-                # Compute request body hash for integrity checking
                 request_body = (
                     payload.model_dump() if payload and hasattr(payload, "model_dump") else payload
                 )
@@ -188,11 +192,9 @@ def idempotent_endpoint() -> Callable[[F], F]:
                     _compute_request_hash(request_body) if request_body is not None else ""
                 )
 
-                # Atomic cache check with per-key lock
                 async with _locks[namespaced_key]:
                     cached = get_cached_response(namespaced_key)
                     if cached is not None:
-                        # Verify request body hash matches
                         cached_hash = cached.get("request_hash", "")
                         body_mismatch = (
                             cached_hash
@@ -200,7 +202,6 @@ def idempotent_endpoint() -> Callable[[F], F]:
                             and cached_hash != current_request_hash
                         )
                         if body_mismatch:
-                            # Body changed — return 409 Conflict
                             logger.warning(
                                 "Idempotency key '%s' reused with different body. Returning 409.",
                                 namespaced_key,
@@ -213,21 +214,15 @@ def idempotent_endpoint() -> Callable[[F], F]:
                         response.headers["X-Idempotency-Key"] = idempotency_key
                         return cached
 
-            result = await func(*args, **kwargs)
+                    result = await func(*args, **kwargs)
 
-            if idempotency_key and response and current_user_id:
-                namespaced_key = f"{current_user_id}:{idempotency_key}"
-                request_body = (
-                    payload.model_dump() if payload and hasattr(payload, "model_dump") else payload
-                )
-                current_request_hash = (
-                    _compute_request_hash(request_body) if request_body is not None else ""
-                )
-                response.headers["X-Idempotency-Key"] = idempotency_key
-                if hasattr(result, "model_dump"):
-                    store_response(namespaced_key, result.model_dump(), current_request_hash)
-                else:
-                    store_response(namespaced_key, result, current_request_hash)
+                    response.headers["X-Idempotency-Key"] = idempotency_key
+                    if hasattr(result, "model_dump"):
+                        store_response(namespaced_key, result.model_dump(), current_request_hash)
+                    else:
+                        store_response(namespaced_key, result, current_request_hash)
+            else:
+                result = await func(*args, **kwargs)
 
             return result
 

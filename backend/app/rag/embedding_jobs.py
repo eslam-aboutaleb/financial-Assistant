@@ -81,6 +81,8 @@ async def process_pending_jobs(limit: int = 10) -> int:
 
     from app.models.embedding_job import EmbeddingJob  # noqa: PLC0415
 
+    from app.models.claim import Claim  # noqa: PLC0415
+
     processed = 0
     async with async_session_factory() as session:
         result = await session.execute(
@@ -96,6 +98,11 @@ async def process_pending_jobs(limit: int = 10) -> int:
             await session.commit()
 
             try:
+                claim_amount = await session.scalar(
+                    select(Claim.amount).where(Claim.claim_id == job.claim_id)
+                )
+                claim_amount = claim_amount if claim_amount is not None else 0.0
+
                 embed_fn = EmbeddingFactory.get_embedding_function()
                 text_content = f"Claim {job.claim_id}: {job.claim_type} - {job.description}"
                 embeddings = await embed_fn([text_content])
@@ -105,7 +112,7 @@ async def process_pending_jobs(limit: int = 10) -> int:
                 await store.upsert(
                     documents=[
                         {
-                            "id": str(job.owner_id),
+                            "id": str(job.claim_id),
                             "text": text_content,
                             "embedding": embedding,
                             "metadata": {
@@ -113,9 +120,8 @@ async def process_pending_jobs(limit: int = 10) -> int:
                                 "policy_number": job.policy_number,
                                 "claim_type": job.claim_type,
                                 "status": job.status,
-                                "amount": 0.0,
+                                "amount": float(claim_amount),
                                 "description": job.description,
-                                "owner_id": str(job.owner_id),
                             },
                         }
                     ],

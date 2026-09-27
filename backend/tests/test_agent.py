@@ -39,11 +39,12 @@ def test_configure_llm_no_key(monkeypatch):
     assert "OPENAI_API_BASE" not in os.environ
 
 
-def test_reset_user_session():
+@pytest.mark.asyncio
+async def test_reset_user_session():
     from app.agent.agent import _user_sessions
 
     _user_sessions["test-user"] = "session-123"
-    reset_user_session("test-user")
+    await reset_user_session("test-user")
     assert "test-user" not in _user_sessions
 
 

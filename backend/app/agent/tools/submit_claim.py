@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import ValidationError
@@ -73,7 +73,7 @@ async def prepare_claim_submission(
         return {"success": False, "validation_errors": errors}
 
     confirmation_token = str(uuid.uuid4())
-    expires_at = datetime.now(UTC)
+    expires_at = datetime.now(UTC) + timedelta(minutes=15)
 
     claim_data = {
         "policy_number": validated.policy_number,

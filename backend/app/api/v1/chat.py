@@ -10,10 +10,11 @@ Idempotency:
   TTL window (default 5 min). This allows frontend clients to safely retry on
   network errors without triggering duplicate LLM calls.
 
-  If the header is omitted, the request is processed normally every time.
-  We deliberately do NOT auto-derive a key from (user_id, message) because
-  users legitimately ask the same question multiple times in a conversation
-  and each request should be processed independently.
+  If the header is omitted, a deterministic key is derived from
+  ``sha256(user_id + ":" + message)`` so that byte-identical retries of the
+  same message from the same user are automatically deduplicated. Users can
+  still ask the same question multiple times in a conversation by varying
+  their message text slightly.
 
   Cached responses are indicated by the ``X-Idempotent-Replayed: true`` header.
 """
@@ -122,7 +123,7 @@ async def chat(  # noqa: PLR0913, PLR0917
                     "resetting session and retrying once.",
                     effective_user_id,
                 )
-                reset_user_session(effective_user_id)
+                await reset_user_session(effective_user_id)
                 result = await run_agent(
                     user_id=effective_user_id,
                     message=payload.message,
@@ -196,7 +197,7 @@ async def reset_chat(
     This clears the ADK InMemorySessionService session so the next message
     from this user starts with a fresh conversation context.
     """
-    reset_user_session(current_user_id)
+    await reset_user_session(current_user_id)
     logger.info("Reset chat session for user '%s'.", current_user_id)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
