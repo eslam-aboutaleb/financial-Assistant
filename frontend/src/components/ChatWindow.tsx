@@ -43,7 +43,6 @@ export default function ChatWindow({
     hasError,
     isReadOnly,
     isStreaming,
-    historyLoadError,
     scrollToBottom,
     handleScroll,
     handleSendMessage,

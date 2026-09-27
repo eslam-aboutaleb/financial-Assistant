@@ -14,7 +14,6 @@ export default function ChatPage() {
   const { status, logout, token } = useAuth();
   const { conversationId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
-  const isHistoryMode = !!conversationId;
   const [historyLoadError, setHistoryLoadError] = useState<string | null>(null);
 
   if (status === "loading") {

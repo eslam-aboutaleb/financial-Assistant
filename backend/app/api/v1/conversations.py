@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db
 from app.models.conversation import Conversation
+from app.models.conversation_message import ConversationMessage
 from app.schemas.models import ConversationDetailResponse, ConversationListResponse
 
 logger = logging.getLogger(__name__)
@@ -115,10 +116,32 @@ async def get_conversation(
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    stmt_messages = (
+        select(ConversationMessage)
+        .where(ConversationMessage.conversation_id == conv_uuid)
+        .order_by(ConversationMessage.timestamp)
+    )
+    result_messages = await session.execute(stmt_messages)
+    db_messages = result_messages.scalars().all()
+
+    messages = []
+    for db_message in db_messages:
+        message_metadata = db_message.message_metadata or {}
+        messages.append(
+            {
+                "id": str(db_message.id),
+                "role": db_message.role,
+                "content": db_message.content,
+                "timestamp": db_message.timestamp.isoformat(),
+                "sources": message_metadata.get("sources") or [],
+                "tool_calls": message_metadata.get("tool_calls") or [],
+            }
+        )
+
     return ConversationDetailResponse(
         id=conv.id,
         title=conv.title,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
-        messages=conv.messages,
+        messages=messages,
     )
