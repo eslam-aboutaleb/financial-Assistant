@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 async def enqueue_embedding_job(  # noqa: PLR0913, PLR0917
+    claim_uuid: uuid.UUID,
     claim_id: str,
     owner_id: uuid.UUID,
     claim_type: str,
@@ -33,11 +34,12 @@ async def enqueue_embedding_job(  # noqa: PLR0913, PLR0917
 ) -> None:
     """Create an embedding job for a newly submitted claim.
 
-    This is called within the claim submission transaction to ensure the
-    job is created atomically with the claim.
+    This is called after the claim submission transaction commits successfully,
+    ensuring the job is created only for persisted claims.
 
     Args:
-        claim_id: The unique claim identifier.
+        claim_uuid: The claim's UUID primary key.
+        claim_id: The unique claim identifier (e.g., "CLM-8821").
         owner_id: UUID of the claim owner.
         claim_type: Type of claim.
         description: Claim description text.
@@ -47,12 +49,13 @@ async def enqueue_embedding_job(  # noqa: PLR0913, PLR0917
     from app.models.embedding_job import EmbeddingJob  # noqa: PLC0415
 
     job = EmbeddingJob(
+        claim_uuid=claim_uuid,
         claim_id=claim_id,
         owner_id=owner_id,
         claim_type=claim_type,
         description=description,
         policy_number=policy_number,
-        status=status,
+        status="pending",
         status_detail="pending",
     )
     try:
@@ -112,17 +115,18 @@ async def process_pending_jobs(limit: int = 10) -> int:
                 await store.upsert(
                     documents=[
                         {
-                            "id": str(job.claim_id),
+                            "id": str(job.claim_uuid),
                             "text": text_content,
                             "embedding": embedding,
-                            "metadata": {
-                                "claim_id": job.claim_id,
-                                "policy_number": job.policy_number,
-                                "claim_type": job.claim_type,
-                                "status": job.status,
-                                "amount": float(claim_amount),
-                                "description": job.description,
-                            },
+                        "metadata": {
+                            "claim_id": job.claim_id,
+                            "policy_number": job.policy_number,
+                            "claim_type": job.claim_type,
+                            "status": job.status,
+                            "amount": float(claim_amount),
+                            "description": job.description,
+                            "owner_id": str(job.owner_id),
+                        },
                         }
                     ],
                 )

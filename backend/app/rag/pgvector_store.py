@@ -142,7 +142,7 @@ class PgVectorStore:
             # Build COALESCE expressions to prefer vector search results for
             # metadata fields, falling back to keyword search results when
             # the vector search did not find a match.
-            meta_coalesce = ", ".join(f"v.{f}, k.{f}" for f in metadata_fields)
+            meta_coalesce = ", ".join(f"COALESCE(v.{f}, k.{f})" for f in metadata_fields)
         else:
             meta_coalesce = ""
 
@@ -167,7 +167,9 @@ class PgVectorStore:
 
         extra_where = " AND ".join(filter_parts) if filter_parts else None
         if extra_where:
-            join_conditions.append(extra_where)
+            join_conditions.append(
+                " AND ".join(f"v.{key} = :{key}" for key in filters)
+            )
 
         join_sql = " AND ".join(join_conditions)
 

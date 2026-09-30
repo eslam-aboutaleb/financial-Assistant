@@ -20,6 +20,7 @@ from app.agent.context import current_user_id
 from app.database import async_session_factory
 from app.models.claim import Claim
 from app.models.claim_submission import ClaimSubmission as ClaimSubmissionModel
+from app.rag.embedding_jobs import enqueue_embedding_job
 from app.schemas.models import ClaimSubmission
 
 logger = logging.getLogger(__name__)
@@ -155,7 +156,7 @@ async def submit_claim_internal(
         logger.warning("Claim submission validation failed: %s", errors)
         return {"success": False, "validation_errors": errors}
 
-    confirmation_id = f"CLM-{uuid.uuid4().hex[:4].upper()}"
+    confirmation_id = f"CLM-{uuid.uuid4().hex[:8].upper()}"
 
     try:
         async with async_session_factory() as session:
@@ -170,6 +171,16 @@ async def submit_claim_internal(
             )
             session.add(new_claim)
             await session.commit()
+
+        await enqueue_embedding_job(
+            claim_uuid=new_claim.id,
+            claim_id=new_claim.claim_id,
+            owner_id=new_claim.owner_id,
+            claim_type=new_claim.claim_type,
+            description=new_claim.description,
+            policy_number=new_claim.policy_number,
+            status=new_claim.status,
+        )
     except Exception as exc:
         logger.exception("Failed to persist claim '%s': %s", confirmation_id, exc)
         return {

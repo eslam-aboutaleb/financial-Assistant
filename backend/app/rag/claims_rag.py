@@ -54,7 +54,7 @@ async def retrieve_claims_hybrid(
             n_results=n_results,
             threshold=distance_threshold,
             text_field="description",
-            metadata_fields=["claim_id", "policy_number", "claim_type", "status", "amount"],
+            metadata_fields=["claim_id", "policy_number", "claim_type", "status", "amount", "owner_id"],
             owner_id=str(user_id),
         )
     except Exception as exc:
@@ -63,6 +63,7 @@ async def retrieve_claims_hybrid(
 
 
 async def ingest_claim(  # noqa: PLR0913, PLR0917
+    id: uuid.UUID,
     claim_id: str,
     owner_id: uuid.UUID,
     claim_type: str,
@@ -78,9 +79,9 @@ async def ingest_claim(  # noqa: PLR0913, PLR0917
     metadata for filtering and display.
 
     Args:
-        claim_id: Unique claim identifier (e.g., "CLM-8821").
-        owner_id: UUID of the claim owner. Used as the document ID for
-            user-scoped retrieval.
+        id: The claim's UUID primary key. Used as the vector store document id.
+        claim_id: Human-readable claim identifier (e.g., "CLM-8821").
+        owner_id: UUID of the claim owner.
         claim_type: Category of the claim (e.g., "Water Damage").
         description: Detailed description of the claim incident.
         policy_number: The policyholder's policy number.
@@ -96,7 +97,7 @@ async def ingest_claim(  # noqa: PLR0913, PLR0917
     await store.upsert(
         documents=[
             {
-                "id": claim_id,
+                "id": str(id),
                 "text": text_content,
                 "embedding": embedding,
                 "metadata": {
@@ -106,6 +107,7 @@ async def ingest_claim(  # noqa: PLR0913, PLR0917
                     "status": status,
                     "amount": amount,
                     "description": description,
+                    "owner_id": str(owner_id),
                 },
             }
         ],
@@ -130,6 +132,7 @@ async def ingest_all_claims():
 
     for claim in claims:
         await ingest_claim(
+            id=claim.id,
             claim_id=claim.claim_id,
             owner_id=claim.owner_id,
             claim_type=claim.claim_type,

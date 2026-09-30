@@ -47,6 +47,7 @@ class Claim(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     embedding: Mapped[str] = mapped_column(Vector(1536), nullable=False, server_default="[0]")
+    text: Mapped[str | None] = mapped_column(String, nullable=True)
     tsvector: Mapped[str] = mapped_column(TSVECTOR, nullable=False, server_default="''")
 
     __table_args__ = (Index("ix_claims_tsvector", tsvector, postgresql_using="gin"),)

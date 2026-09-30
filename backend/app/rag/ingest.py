@@ -11,12 +11,14 @@ process is skipped to avoid redundant embedding generation and storage costs.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 import uuid
 from typing import Any
 
 from app.config import get_settings
+from app.database import async_session_factory
 from app.rag.embedding import EmbeddingFactory
 from app.rag.vector_store import get_vector_store
 
@@ -142,9 +144,10 @@ async def ingest_policy(
 ) -> int:
     """Ingest policy documents into the configured vector store.
 
-    This function is idempotent: if the vector store already contains chunks,
-    it returns the existing count without re-processing the document. This
-    makes it safe to call on every application startup.
+    This function is idempotent: it hashes the source file and stores the
+    hash in ``policy_ingestion_meta``. If the file content has not changed
+    since the last successful ingestion, the process is skipped. This makes
+    it safe to call on every application startup.
 
     Args:
         policy_path: Optional explicit path to the policy Markdown file.
@@ -155,15 +158,40 @@ async def ingest_policy(
         int: The number of chunks currently stored in the vector store after
         this call. Returns 0 if no chunks could be extracted.
     """
+    from sqlalchemy import text as sa_text  # noqa: PLC0415
+
     settings = get_settings()
     policy_path = policy_path or settings.policy_file_path
 
-    store = get_vector_store(table_name="policy_chunks", id_field="id")
+    if not policy_path:
+        logger.warning("No policy_path configured; skipping ingestion.")
+        return 0
 
-    existing_count = await store.count()
-    if existing_count > 0:
+    # Compute SHA-256 hash of the policy file contents.
+    try:
+        with open(policy_path, encoding="utf-8") as f:
+            file_content = f.read()
+    except FileNotFoundError:
+        logger.warning("Policy document not found at '%s'; skipping ingestion.", policy_path)
+        return 0
+
+    source_hash = hashlib.sha256(file_content.encode("utf-8")).hexdigest()
+
+    # Check if we have already ingested this exact content.
+    async with async_session_factory() as session:
+        result = await session.execute(
+            sa_text("SELECT source_hash FROM policy_ingestion_meta WHERE source = :source"),
+            {"source": policy_path},
+        )
+        row = result.mappings().first()
+        stored_hash = row["source_hash"] if row else None
+
+    if stored_hash == source_hash:
+        existing_count = await get_vector_store(table_name="policy_chunks", id_field="id").count()
         logger.info(
-            "Vector store already contains %d chunks - skipping ingestion.",
+            "Policy '%s' unchanged (hash %s); skipping ingestion. %d chunks already stored.",
+            policy_path,
+            source_hash[:12],
             existing_count,
         )
         return existing_count
@@ -181,11 +209,36 @@ async def ingest_policy(
     for chunk, emb in zip(chunks, embeddings, strict=True):
         chunk["embedding"] = emb
 
+    source_filename = policy_path.rsplit("/", maxsplit=1)[-1]
+    async with async_session_factory() as session:
+        await session.execute(
+            sa_text("DELETE FROM policy_chunks WHERE source = :source"),
+            {"source": source_filename},
+        )
+        await session.commit()
+
+    store = get_vector_store(table_name="policy_chunks", id_field="id")
     await store.upsert(chunks)
 
+    # Record the ingestion hash so we can detect future changes.
+    async with async_session_factory() as session:
+        await session.execute(
+            sa_text("""
+                INSERT INTO policy_ingestion_meta (source, source_hash)
+                VALUES (:source, :source_hash)
+                ON CONFLICT (source) DO UPDATE SET
+                    source_hash = EXCLUDED.source_hash,
+                    ingested_at = now()
+            """),
+            {"source": policy_path, "source_hash": source_hash},
+        )
+        await session.commit()
+
     logger.info(
-        "Ingested %d chunks.",
+        "Ingested %d chunks from '%s' (hash %s).",
         len(chunks),
+        policy_path,
+        source_hash[:12],
     )
     return len(chunks)
 
