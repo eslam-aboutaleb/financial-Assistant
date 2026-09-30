@@ -44,7 +44,6 @@ export default function ChatPage() {
 
   const handleSelectChat = (id: string) => {
     setHistoryLoadError(null);
-    setChatKey((prev) => prev + 1);
     if (sidebarOpen) setSidebarOpen(false);
     navigate(`/chat/${id}`);
   };
@@ -151,7 +150,7 @@ export default function ChatPage() {
           </button>
         </div>
         <ChatWindow
-          key={chatKey}
+          key={`${conversationId ?? "new"}-${chatKey}`}
           onNewChat={handleNewChat}
           historyId={conversationId}
           onMessageSent={() => setRefreshTrigger((p) => p + 1)}

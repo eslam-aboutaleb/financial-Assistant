@@ -136,6 +136,7 @@ export default function Sidebar({
           return (
             <button
               key={chat.id}
+              type="button"
               onClick={() => onSelectChat && onSelectChat(chat.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm text-left rounded-xl transition-colors duration-200 group ${
                 isActive
