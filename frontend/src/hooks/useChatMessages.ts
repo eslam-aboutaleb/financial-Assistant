@@ -11,7 +11,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Message } from "@/types/chat";
+import { Message, ADKSSEEvent } from "@/types/chat";
 import {
   streamMessage,
   resetChat as apiResetChat,
@@ -81,7 +81,7 @@ export function useChatMessages({
         setHistoryLoadError(null);
         onHistoryLoaded?.();
       }
-    }, [historyData, historyId, onHistoryLoaded]);
+    }, [historyData, onHistoryLoaded]);
 
    useEffect(() => {
      if (!historyId) {
