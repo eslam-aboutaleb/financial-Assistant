@@ -21,7 +21,7 @@ interface SourcesBadgeProps {
 }
 
 export default function SourcesBadge({ sources }: SourcesBadgeProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   if (!sources || sources.length === 0) return null;
 
