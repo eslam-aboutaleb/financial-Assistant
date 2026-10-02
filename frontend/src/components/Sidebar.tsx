@@ -102,6 +102,7 @@ export default function Sidebar({
       <div className="px-3 pb-2">
         <button
           id="new-chat-button"
+          type="button"
           onClick={onNewChat}
           className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-insurance-info text-white text-sm font-medium hover:bg-insurance-ink-secondary transition-all duration-200"
           data-testid="new-chat-button"
@@ -136,6 +137,7 @@ export default function Sidebar({
           return (
             <button
               key={chat.id}
+              type="button"
               onClick={() => onSelectChat && onSelectChat(chat.id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm text-left rounded-xl transition-colors duration-200 group ${
                 isActive
@@ -164,6 +166,7 @@ export default function Sidebar({
       {onLogout && (
         <div className="p-3 pt-2">
           <button
+            type="button"
             onClick={onLogout}
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-insurance-error hover:bg-insurance-error/10 text-sm font-medium transition-colors duration-200"
           >

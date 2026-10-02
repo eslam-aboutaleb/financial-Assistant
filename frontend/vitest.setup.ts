@@ -20,3 +20,9 @@ Object.defineProperty(window, "localStorage", {
   value: localStorageMock,
   writable: true,
 });
+
+// jsdom does not implement scrollIntoView, which the chat message list calls
+// whenever messages change. Stub it so component tests can render ChatPage.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function scrollIntoView() {};
+}

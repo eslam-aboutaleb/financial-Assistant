@@ -151,7 +151,7 @@ export default function ChatPage() {
           </button>
         </div>
         <ChatWindow
-          key={chatKey}
+          key={`${conversationId ?? "new"}-${chatKey}`}
           onNewChat={handleNewChat}
           historyId={conversationId}
           onMessageSent={() => setRefreshTrigger((p) => p + 1)}
