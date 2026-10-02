@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 import app.models.claim  # noqa: F401
 import app.models.conversation  # noqa: F401
+import app.models.policy  # noqa: F401
 import app.models.policy_chunk  # noqa: F401
+import app.models.policy_version  # noqa: F401
 
 # Import models so that Base.metadata is fully populated before migrations run.
 # These imports have no other side-effects; they are required for autogenerate.

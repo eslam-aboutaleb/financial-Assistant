@@ -1,7 +1,7 @@
 """
 Vector store abstraction for the OmniCare RAG subsystem.
 
-Defines the interface for hybrid retrieval (vector + BM25) operations,
+Defines the interface for hybrid retrieval (vector + PostgreSQL full-text search) operations,
 allowing different backends (pgvector, ChromaDB, etc.) to be swapped
 via configuration without changing the retriever or ingestion code.
 """
@@ -25,7 +25,7 @@ class VectorStore(ABC):
         threshold: float,
         **filters: Any,
     ) -> list[dict[str, Any]]:
-        """Perform hybrid vector + BM25 search using Reciprocal Rank Fusion.
+        """Perform hybrid vector + PostgreSQL full-text search using Reciprocal Rank Fusion.
 
         Args:
             query: Natural language search query.

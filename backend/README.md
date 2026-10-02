@@ -41,7 +41,7 @@ graph TD
     end
 
     subgraph Storage_Layer["Datastores & External Services"]
-        PgVectorStore[("pgvector / PostgreSQL<br/>Hybrid Vector + BM25 Search")]
+        PgVectorStore[("pgvector / PostgreSQL<br/>Hybrid Vector + PostgreSQL Full-Text Search")]
         PolicyDoc[("Source Policy<br/>sample_policy.md")]
         LLMProvider[("LLM Provider<br/>OpenAI / Anthropic / Gemini")]
     end

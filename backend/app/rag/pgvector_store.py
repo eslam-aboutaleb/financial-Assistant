@@ -1,7 +1,7 @@
 """
 pgvector implementation of the VectorStore interface.
 
-Provides hybrid search (vector + BM25 RRF), document counting, and upsert
+Provides hybrid search (vector + PostgreSQL full-text search RRF), document counting, and upsert
 operations against PostgreSQL tables with pgvector and tsvector columns.
 
 Security model:
@@ -13,13 +13,14 @@ Security model:
     before interpolation into raw SQL strings. This prevents SQL injection even
     when identifiers are derived from configuration.
   - Raw SQL is used because the hybrid search query requires complex CTEs with
-    window functions, pgvector operators, and BM25 full-text search that are
+    window functions, pgvector operators, and PostgreSQL full-text search that are
     impractical to express in SQLAlchemy ORM/Core while remaining readable.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from sqlalchemy import text
@@ -51,11 +52,43 @@ def _validate_identifier(name: str, label: str) -> None:
         raise ValueError(f"Unsafe {label}: {name!r}")
 
 
+def _validate_embedding(
+    embedding: list[float],
+    expected_dim: int,
+    label: str = "embedding",
+) -> None:
+    """Validate that an embedding vector has the expected dimension and contains only finite values.
+
+    Args:
+        embedding: The embedding vector to validate.
+        expected_dim: Expected dimensionality of the embedding.
+        label: Human-readable label for error messages.
+
+    Raises:
+        ValueError: If the embedding has the wrong dimension or contains non-finite values.
+        TypeError: If a value in the embedding is not a number.
+    """
+    if len(embedding) != expected_dim:
+        raise ValueError(
+            f"{label} has {len(embedding)} dimensions; expected {expected_dim}"
+        )
+    for i, value in enumerate(embedding):
+        try:
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"{label}[{i}] is not finite: {value!r}"
+                )
+        except TypeError as exc:
+            raise TypeError(
+                f"{label}[{i}] is not a number: {value!r}"
+            ) from exc
+
+
 class PgVectorStore:
     """pgvector-based vector store implementation.
 
     Supports hybrid search combining vector similarity (pgvector <-> operator)
-    with BM25 full-text search (tsvector/tsquery) using Reciprocal Rank Fusion.
+    with PostgreSQL full-text search (tsvector/tsquery) using Reciprocal Rank Fusion.
     """
 
     def __init__(self, table_name: str, id_field: str = "id", embedding_dim: int = 1536):
@@ -86,11 +119,11 @@ class PgVectorStore:
         metadata_fields: list[str] | None = None,
         **filters: Any,
     ) -> list[dict[str, Any]]:
-        """Hybrid search with vector + BM25 RRF.
+        """Hybrid search with vector + PostgreSQL full-text search RRF.
 
         Executes a two-stage retrieval:
           1. Vector search using pgvector L2 distance with a distance threshold.
-          2. BM25 keyword search using PostgreSQL full-text search.
+          2. PostgreSQL full-text search using tsvector/tsquery.
 
         Results from both stages are merged using Reciprocal Rank Fusion (RRF),
         which combines the ranks from each retrieval method to produce a unified
@@ -131,17 +164,27 @@ class PgVectorStore:
             embedding_list = await embed_fn([query])
             embedding = embedding_list[0]
 
-        embedding_str = f"[{','.join(str(x) for x in embedding)}]"
+        _validate_embedding(embedding, self.embedding_dim, label="query embedding")
         metadata_fields = metadata_fields or []
 
         # Build SELECT clause for metadata fields so they are returned in
         # both the vector and keyword CTEs. This ensures metadata is available
         # regardless of which search method found the document.
-        meta_select = ", ".join(metadata_fields) if metadata_fields else ""
+        vector_select = [
+            self.id_field,
+            text_field,
+        ]
+        vector_select.extend(metadata_fields)
+        vector_select_sql = ", ".join(vector_select)
+
+        keyword_select = [
+            self.id_field,
+            text_field,
+        ]
+        keyword_select.extend(metadata_fields)
+        keyword_select_sql = ", ".join(keyword_select)
+
         if metadata_fields:
-            # Build COALESCE expressions to prefer vector search results for
-            # metadata fields, falling back to keyword search results when
-            # the vector search did not find a match.
             meta_coalesce = ", ".join(f"COALESCE(v.{f}, k.{f})" for f in metadata_fields)
         else:
             meta_coalesce = ""
@@ -154,6 +197,7 @@ class PgVectorStore:
         # Build query parameters and WHERE fragments from validated filters.
         # All user-supplied values are bound as parameters to prevent SQL
         # injection; only pre-validated identifiers are interpolated.
+        embedding_str = f"[{','.join(str(x) for x in embedding)}]"
         params: dict[str, Any] = {
             "query": query,
             "embedding": embedding_str,
@@ -176,19 +220,25 @@ class PgVectorStore:
         stmt = text(
             f"""
             WITH vector_search AS (
-                SELECT {self.id_field}, {text_field}, {meta_select},
+                SELECT {vector_select_sql},
                        embedding <-> cast(:embedding as vector) AS distance,
-                       ROW_NUMBER() OVER (ORDER BY embedding <-> cast(:embedding as vector)) AS rank
+                       ROW_NUMBER() OVER (
+                           ORDER BY
+                               embedding <-> cast(:embedding as vector),
+                               {self.id_field}
+                       ) AS rank
                 FROM {self.table_name}
                 WHERE embedding <-> cast(:embedding as vector) < :distance_threshold
                 {f"AND {extra_where}" if extra_where else ""}
                 LIMIT :n_results
             ),
             keyword_search AS (
-                SELECT {self.id_field}, {text_field}, {meta_select},
+                SELECT {keyword_select_sql},
                        ts_rank(tsvector, plainto_tsquery('english', :query)) AS score,
                        ROW_NUMBER() OVER (
-                           ORDER BY ts_rank(tsvector, plainto_tsquery('english', :query)) DESC
+                           ORDER BY
+                               ts_rank(tsvector, plainto_tsquery('english', :query)) DESC,
+                               {self.id_field}
                        ) AS rank
                 FROM {self.table_name}
                 WHERE tsvector @@ plainto_tsquery('english', :query)
@@ -204,7 +254,7 @@ class PgVectorStore:
                 COALESCE(1.0 / (60 + v.rank), 0.0) + COALESCE(1.0 / (60 + k.rank), 0.0) AS rrf_score
             FROM vector_search v
             FULL OUTER JOIN keyword_search k ON {join_sql}
-            ORDER BY rrf_score DESC
+            ORDER BY rrf_score DESC, {self.id_field}
             LIMIT :n_results
         """
         )
@@ -225,7 +275,7 @@ class PgVectorStore:
                     {
                         "document": row["document"],
                         "metadata": metadata,
-                        "distance": float(row["distance"]) if row["distance"] is not None else 0.0,
+                        "distance": float(row["distance"]) if row["distance"] is not None else None,
                         "_rrf_score": float(row["rrf_score"]),
                     }
                 )
@@ -241,10 +291,18 @@ class PgVectorStore:
             logger.error("Hybrid search failed on %s: %s", self.table_name, exc)
             return []
 
-    async def count(self, **filters: Any) -> int:
+    async def count(
+        self,
+        session: Any = None,
+        **filters: Any,
+    ) -> int:
         """Count documents in the store.
 
         Args:
+            session: Optional external SQLAlchemy async session. If provided,
+                this session is reused instead of creating a new one. When an
+                external session is supplied, the caller is responsible for
+                committing or rolling back the transaction.
             **filters: Optional equality filters (e.g., ``owner_id="..."``).
                 Keys must be valid SQL identifiers; values are bound as
                 parameters to prevent SQL injection.
@@ -271,9 +329,13 @@ class PgVectorStore:
         )
 
         try:
-            async with async_session_factory() as session:
+            if session is not None:
                 result = await session.execute(stmt, params)
                 count = result.scalar_one()
+            else:
+                async with async_session_factory() as session:
+                    result = await session.execute(stmt, params)
+                    count = result.scalar_one()
             return int(count) if count else 0
         except Exception as exc:
             logger.error("Count failed on %s: %s", self.table_name, exc)
@@ -282,6 +344,7 @@ class PgVectorStore:
     async def upsert(
         self,
         documents: list[dict[str, Any]],
+        session: Any = None,
         text_field: str = "text",
         embedding_field: str = "embedding",
         id_field: str | None = None,
@@ -296,6 +359,9 @@ class PgVectorStore:
         Args:
             documents: List of document dicts with keys: id, text, metadata,
                 embedding. Metadata keys are included as additional columns.
+            session: Optional external SQLAlchemy async session. If provided,
+                this session is reused instead of creating a new one. The caller
+                is responsible for committing the transaction after this call.
             text_field: Name of the text column. Defaults to "text".
             embedding_field: Name of the embedding column. Defaults to "embedding".
             id_field: Name of the primary key column. Defaults to the store's
@@ -319,54 +385,78 @@ class PgVectorStore:
         if not documents:
             return
 
+        owns_session = session is None
         try:
-            async with async_session_factory() as session:
-                for doc in documents:
-                    # Build column names and parameter placeholders for the
-                    # INSERT statement. Columns include: id, text, embedding,
-                    # plus any metadata keys and extra_fields.
-                    columns = [id_field, text_field, embedding_field]
-                    placeholders = [f":{id_field}", f":{text_field}", f":{embedding_field}"]
+            for doc in documents:
+                _validate_embedding(
+                    doc["embedding"],
+                    self.embedding_dim,
+                    label="document embedding",
+                )
 
-                    params: dict[str, Any] = {
-                        id_field: doc.get("id"),
-                        text_field: doc["text"],
-                        # Embeddings are stored as PostgreSQL vector literals
-                        # (e.g., "[0.1,0.2,...]") for direct insertion.
-                        embedding_field: f"[{','.join(str(x) for x in doc['embedding'])}]",
-                    }
+            all_meta_keys: list[str] = []
+            seen_meta_keys: set[str] = set()
+            for doc in documents:
+                for key in doc.get("metadata", {}):
+                    _validate_identifier(key, "metadata key")
+                    if key not in seen_meta_keys:
+                        seen_meta_keys.add(key)
+                        all_meta_keys.append(key)
 
-                    # Add metadata fields from the document dict.
-                    for key, value in doc.get("metadata", {}).items():
-                        columns.append(key)
-                        placeholders.append(f":{key}")
-                        params[key] = value
+            columns = [id_field, text_field, embedding_field]
+            if extra_fields:
+                columns.extend(extra_fields.keys())
+            columns.extend(all_meta_keys)
 
-                    # Add static extra fields (same value for all documents).
-                    if extra_fields:
-                        for key, value in extra_fields.items():
-                            columns.append(key)
-                            placeholders.append(f":{key}")
-                            params[key] = value
+            for col in columns:
+                _validate_identifier(col, "upsert column")
 
-                    columns_str = ", ".join(columns)
-                    placeholders_str = ", ".join(placeholders)
+            non_id_columns = [c for c in columns if c != id_field]
+            update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in non_id_columns)
 
-                    # Build ON CONFLICT clause: update all non-ID columns.
-                    update_cols = [c for c in columns if c != id_field]
-                    update_str = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_cols)
+            values_clauses: list[str] = []
+            params: dict[str, Any] = {}
 
-                    stmt = text(
-                        f"""
-                        INSERT INTO {self.table_name} ({columns_str})
-                        VALUES ({placeholders_str})
-                        ON CONFLICT ({id_field}) DO UPDATE SET {update_str}
-                    """
-                    )
+            for idx, doc in enumerate(documents):
+                row_placeholders = []
+                for key in [id_field, text_field, embedding_field]:
+                    param_name = f"{key}__{idx}"
+                    if key == id_field:
+                        params[param_name] = doc.get("id")
+                    elif key == embedding_field:
+                        params[param_name] = f"[{','.join(str(x) for x in doc[key])}]"
+                    else:
+                        params[param_name] = doc[key]
+                    row_placeholders.append(f":{param_name}")
+                for meta_key in all_meta_keys:
+                    param_name = f"{meta_key}__{idx}"
+                    params[param_name] = doc.get("metadata", {}).get(meta_key)
+                    row_placeholders.append(f":{param_name}")
+                if extra_fields:
+                    for extra_key, extra_val in extra_fields.items():
+                        param_name = f"{extra_key}__{idx}"
+                        params[param_name] = extra_val
+                        row_placeholders.append(f":{param_name}")
+                values_clauses.append(f"({', '.join(row_placeholders)})")
 
+            values_sql = ",\n    ".join(values_clauses)
+            columns_str = ", ".join(columns)
+
+            stmt = text(
+                f"""
+                INSERT INTO {self.table_name} ({columns_str})
+                VALUES
+                    {values_sql}
+                ON CONFLICT ({id_field}) DO UPDATE SET {update_str}
+            """
+            )
+
+            if owns_session:
+                async with async_session_factory() as session:
                     await session.execute(stmt, params)
-
-                await session.commit()
+                    await session.commit()
+            else:
+                await session.execute(stmt, params)
             logger.info("Upserted %d documents to %s.", len(documents), self.table_name)
         except Exception as exc:
             logger.error("Upsert failed on %s: %s", self.table_name, exc)

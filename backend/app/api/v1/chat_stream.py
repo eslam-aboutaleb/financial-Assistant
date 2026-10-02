@@ -148,7 +148,10 @@ async def chat_stream(
         # Emit response_complete with accumulated sources after the stream ends.
         # This guarantees the frontend receives sources even if the final ADK
         # event was transformed into a text_delta because it contained content.
-        yield f'data: {{"type": "response_complete", "sources": {json.dumps(stream_result.sources)}}}\n\n'
+        yield (
+            f"data: "
+            f'{{"type": "response_complete", "sources": {json.dumps(stream_result.sources)}}}\n\n'
+        )
 
         # Persist conversation turn after stream completes
         if stream_result.session_id:

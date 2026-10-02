@@ -74,7 +74,9 @@ async def create_all_tables():
     import app.models.conversation  # noqa: F401, PLC0415
     import app.models.conversation_message  # noqa: F401, PLC0415
     import app.models.embedding_job  # noqa: F401, PLC0415
+    import app.models.policy  # noqa: F401, PLC0415
     import app.models.policy_chunk  # noqa: F401, PLC0415
+    import app.models.policy_version  # noqa: F401, PLC0415
 
     # Import models to register them with SQLAlchemy's declarative base.
     # These imports have no other side-effects; they are required so that

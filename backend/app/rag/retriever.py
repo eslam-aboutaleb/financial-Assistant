@@ -2,7 +2,7 @@
 Hybrid retrieval module for OmniCare policy documents.
 
 Uses the configured VectorStore (pgvector by default) for hybrid search
-combining vector similarity with BM25 full-text search.
+combining vector similarity with PostgreSQL full-text search.
 """
 
 from __future__ import annotations
@@ -22,12 +22,12 @@ async def retrieve_hybrid(
     n_results: int = 5,
     distance_threshold: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Hybrid retrieval: vector search + BM25 keyword search using RRF.
+    """Hybrid retrieval: vector search + PostgreSQL full-text search using RRF.
 
     Orchestrates the two-stage retrieval pipeline:
       1. Embeds the query using the configured embedding function.
       2. Delegates to the vector store's ``hybrid_search`` method, which
-         executes parallel vector similarity and BM25 full-text search CTEs
+         executes parallel vector similarity and PostgreSQL full-text search CTEs
          and merges results via Reciprocal Rank Fusion.
 
     Args:

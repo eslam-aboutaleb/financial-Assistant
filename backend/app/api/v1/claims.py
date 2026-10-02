@@ -157,11 +157,13 @@ async def confirm_claim_submission(
     async with async_session_factory() as session:
         submission = (
             await session.execute(
-                select(ClaimSubmission).where(
+                select(ClaimSubmission)
+                .where(
                     ClaimSubmission.confirmation_token == payload.confirmation_token,
                     ClaimSubmission.user_id == user_uuid,
                     ClaimSubmission.status == "pending",
                 )
+                .with_for_update()
             )
         ).scalar_one_or_none()
 
@@ -184,20 +186,29 @@ async def confirm_claim_submission(
                 detail="Confirmation token has expired.",
             )
 
-        # Mark the pending submission as completed before calling the internal
-        # submit logic. This prevents double-confirmation if the client retries.
+        claim_data = submission.claim_data
+        result = await submit_claim_internal(
+            policy_number=claim_data["policy_number"],
+            claim_type=claim_data["claim_type"],
+            amount=float(claim_data["amount"]),
+            description=claim_data["description"],
+            user_uuid=user_uuid,
+            session=session,
+        )
+
+        if not result.get("success"):
+            logger.error(
+                "Claim submission failed for token '%s': %s",
+                payload.confirmation_token,
+                result.get("error", "Unknown error"),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=result.get("error", "Claim submission failed."),
+            )
+
         submission.status = "completed"
         await session.commit()
-
-    # Call the internal submit logic with the validated claim data
-    claim_data = submission.claim_data
-    result = await submit_claim_internal(
-        policy_number=claim_data["policy_number"],
-        claim_type=claim_data["claim_type"],
-        amount=claim_data["amount"],
-        description=claim_data["description"],
-        user_uuid=user_uuid,
-    )
 
     logger.info(
         "Claim confirmed for user '%s': %s",

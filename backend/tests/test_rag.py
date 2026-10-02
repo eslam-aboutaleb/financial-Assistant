@@ -2,6 +2,7 @@
 Unit tests for the RAG ingestion and hybrid retrieval modules using the vector store abstraction.
 """
 
+from datetime import UTC, datetime
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -11,6 +12,8 @@ from app.rag.claims_rag import ingest_all_claims, ingest_claim, retrieve_claims_
 from app.rag.embedding import EmbeddingFactory, LitellmEmbeddingFunction
 from app.rag.ingest import chunk_policy_document, ingest_policy
 from app.rag.retriever import retrieve_hybrid
+from app.models.policy import Policy
+from app.models.policy_version import PolicyVersion
 
 
 def test_chunk_policy_document(tmp_path):
@@ -102,9 +105,48 @@ async def test_ingest_policy_skip_if_exists():
     ):
         mock_sha.return_value.hexdigest.return_value = "storedhash"
         mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.mappings.return_value.first.return_value = {"source_hash": "storedhash"}
-        mock_session.execute.return_value = mock_result
+        existing_policy = Policy(
+            policy_id="00000000-0000-0000-0000-000000000001",
+            product="omnicare_base",
+            jurisdiction="US",
+            is_active=True,
+        )
+        old_version = PolicyVersion(
+            version_id="00000000-0000-0000-0000-000000000002",
+            policy_id="00000000-0000-0000-0000-000000000001",
+            version="current",
+            effective_from=datetime(2026, 9, 1, tzinfo=UTC),
+            effective_to=None,
+            source_hash="storedhash",
+            embedding_model="text-embedding-3-small",
+            embedding_dim=1536,
+            chunker_version="v1",
+            chunk_size=600,
+            overlap=100,
+            retrieval_schema_version="v1",
+        )
+        mock_policy_result = MagicMock()
+        mock_policy_result.scalar_one_or_none.return_value = existing_policy
+        mock_version_result = MagicMock()
+        mock_version_result.scalar_one_or_none.return_value = old_version
+        mock_count_result = MagicMock()
+        mock_count_result.scalar_one.return_value = 10
+
+        def make_execute_result(*args, **kwargs):
+            query_str = str(args[0]) if args else ""
+            if "SELECT" in query_str and "policies" in query_str:
+                return mock_policy_result
+            elif "SELECT" in query_str and "policy_versions" in query_str:
+                return mock_version_result
+            elif "SELECT" in query_str and "COUNT" in query_str:
+                return mock_count_result
+            elif "pg_advisory" in query_str:
+                result = MagicMock()
+                result.scalar_one.return_value = 0
+                return result
+            return MagicMock()
+
+        mock_session.execute.side_effect = make_execute_result
         mock_factory.return_value.__aenter__.return_value = mock_session
 
         count = await ingest_policy()
@@ -124,9 +166,30 @@ async def test_ingest_policy_no_chunks():
     ):
         mock_sha.return_value.hexdigest.return_value = "newhash"
         mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.mappings.return_value.first.return_value = {"source_hash": "oldhash"}
-        mock_session.execute.return_value = mock_result
+        existing_policy = Policy(
+            policy_id="00000000-0000-0000-0000-000000000001",
+            product="omnicare_base",
+            jurisdiction="US",
+            is_active=True,
+        )
+        mock_version_result = MagicMock()
+        mock_version_result.scalar_one_or_none.return_value = None
+
+        def make_execute_result(*args, **kwargs):
+            query_str = str(args[0]) if args else ""
+            if "SELECT" in query_str and "policies" in query_str:
+                result = MagicMock()
+                result.scalar_one_or_none.return_value = existing_policy
+                return result
+            elif "SELECT" in query_str and "policy_versions" in query_str:
+                return mock_version_result
+            elif "pg_advisory" in query_str:
+                result = MagicMock()
+                result.scalar_one.return_value = 0
+                return result
+            return MagicMock()
+
+        mock_session.execute.side_effect = make_execute_result
         mock_factory.return_value.__aenter__.return_value = mock_session
 
         count = await ingest_policy()
@@ -161,9 +224,35 @@ async def test_ingest_policy_success():
         mock_sha.return_value.hexdigest.return_value = "newhash"
         mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536 for _ in chunks])
         mock_session = AsyncMock()
-        mock_result = MagicMock()
-        mock_result.mappings.return_value.first.return_value = None
-        mock_session.execute.return_value = mock_result
+        existing_policy = Policy(
+            policy_id="00000000-0000-0000-0000-000000000001",
+            product="omnicare_base",
+            jurisdiction="US",
+            is_active=True,
+        )
+        mock_version_result = MagicMock()
+        mock_version_result.scalar_one_or_none.return_value = None
+
+        def make_execute_result(*args, **kwargs):
+            query_str = str(args[0]) if args else ""
+            if "SELECT" in query_str and "policies" in query_str:
+                result = MagicMock()
+                result.scalar_one_or_none.return_value = existing_policy
+                return result
+            elif "SELECT" in query_str and "policy_versions" in query_str:
+                return mock_version_result
+            elif "pg_advisory" in query_str:
+                result = MagicMock()
+                result.scalar_one.return_value = 0
+                return result
+            elif "DELETE" in query_str:
+                result = MagicMock()
+                result.rowcount = 0
+                return result
+            return MagicMock()
+
+        mock_session.execute.side_effect = make_execute_result
+        mock_session.flush = AsyncMock()
         mock_factory.return_value.__aenter__.return_value = mock_session
 
         count = await ingest_policy()
@@ -299,41 +388,218 @@ async def test_ingest_policy_reingests_when_hash_changes(tmp_path):
         ]
         mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536])
         mock_session = AsyncMock()
-        mock_execute_result = MagicMock()
-        mock_execute_result.mappings.return_value.first.return_value = None
-        mock_session.execute.return_value = mock_execute_result
+        existing_policy = Policy(
+            policy_id="00000000-0000-0000-0000-000000000001",
+            product="omnicare_base",
+            jurisdiction="US",
+            is_active=True,
+        )
+        old_version = PolicyVersion(
+            version_id="00000000-0000-0000-0000-000000000002",
+            policy_id="00000000-0000-0000-0000-000000000001",
+            version="current",
+            effective_from=datetime(2026, 9, 1, tzinfo=UTC),
+            effective_to=None,
+            source_hash="originalhash",
+            embedding_model="text-embedding-3-small",
+            embedding_dim=1536,
+            chunker_version="v1",
+            chunk_size=600,
+            overlap=100,
+            retrieval_schema_version="v1",
+        )
+
+        def make_execute_result(*args, **kwargs):
+            query_str = str(args[0]) if args else ""
+            if "SELECT" in query_str and "policies" in query_str:
+                result = MagicMock()
+                result.scalar_one_or_none.return_value = existing_policy
+                return result
+            elif "SELECT" in query_str and "policy_versions" in query_str:
+                result = MagicMock()
+                result.scalar_one_or_none.return_value = old_version
+                return result
+            elif "pg_advisory" in query_str:
+                result = MagicMock()
+                result.scalar_one.return_value = 0
+                return result
+            elif "DELETE" in query_str:
+                result = MagicMock()
+                result.rowcount = 0
+                return result
+            return MagicMock()
+
+        mock_session.execute.side_effect = make_execute_result
+        mock_session.flush = AsyncMock()
         mock_session_factory.return_value.__aenter__.return_value = mock_session
 
-        # First call: no stored hash, should ingest.
+        # First call: hash matches stored, should skip.
         count1 = await ingest_policy(policy_path=str(md_file))
-        assert count1 == 1
-        mock_store.upsert.assert_called_once()
+        assert count1 == 2
+        mock_store.upsert.assert_not_called()
 
         # Reset mock for second call.
         mock_store.reset_mock()
-        mock_execute_result.mappings.return_value.first.return_value = {
-            "source_hash": "originalhash"
-        }
-
-        # Second call: hash matches stored, should skip.
-        count2 = await ingest_policy(policy_path=str(md_file))
-        assert count2 == 2
-        mock_store.upsert.assert_not_called()
-
-        # Update file content to trigger re-ingestion.
-        md_file.write_text("# Policy\n\nChanged content.", encoding="utf-8")
+        mock_session.reset_mock()
         mock_sha.return_value.hexdigest.return_value = "changedhash"
         mock_chunk.return_value = [
             {"id": "c2", "text": "Changed Policy text", "metadata": {"source": "policy.md"}}
         ]
         mock_embed.return_value = AsyncMock(return_value=[[0.2] * 1536])
-        mock_execute_result.mappings.return_value.first.return_value = {
-            "source_hash": "originalhash"
-        }
+        mock_session.execute.side_effect = make_execute_result
 
-        # Third call: hash differs, should re-ingest.
-        count3 = await ingest_policy(policy_path=str(md_file))
-        assert count3 == 1
+        # Second call: hash differs, should re-ingest.
+        count2 = await ingest_policy(policy_path=str(md_file))
+        assert count2 == 1
+        mock_store.upsert.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ingest_policy_reingests_when_chunker_version_changes(tmp_path):
+    """ingest_policy() re-ingests when chunker_version differs even if source hash is unchanged."""
+    md_file = tmp_path / "policy.md"
+    md_file.write_text("# Policy\n\nOriginal content.", encoding="utf-8")
+
+    mock_store = AsyncMock()
+    mock_store.count.return_value = 2
+
+    with (
+        patch("app.rag.ingest.get_vector_store", return_value=mock_store),
+        patch("app.rag.ingest.chunk_policy_document") as mock_chunk,
+        patch("app.rag.ingest.EmbeddingFactory.get_embedding_function") as mock_embed,
+        patch("app.rag.ingest.async_session_factory") as mock_session_factory,
+        patch("app.rag.ingest.hashlib.sha256") as mock_sha,
+    ):
+        mock_sha.return_value.hexdigest.return_value = "samehash"
+        mock_chunk.return_value = [
+            {"id": "c1", "text": "Policy text", "metadata": {"source": "policy.md"}}
+        ]
+        mock_embed.return_value = AsyncMock(return_value=[[0.1] * 1536])
+        mock_session = AsyncMock()
+        mock_execute_result = MagicMock()
+        # Stored snapshot has v1 chunker_version but current snapshot is v2.
+        mock_execute_result.mappings.return_value.first.return_value = {
+            "source_hash": "samehash",
+            "embedding_model": "text-embedding-3-small",
+            "embedding_dim": 1536,
+            "chunker_version": "v1",
+            "chunk_size": 600,
+            "overlap": 100,
+            "retrieval_schema_version": "v1",
+        }
+        mock_session.execute.return_value = mock_execute_result
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+        # First call: snapshot differs in chunker_version, should re-ingest.
+        count = await ingest_policy(policy_path=str(md_file))
+        assert count == 1
+        mock_store.upsert.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ingest_policy_skips_when_snapshot_stable(tmp_path):
+    """ingest_policy() skips when active version's source hash is unchanged."""
+    md_file = tmp_path / "policy.md"
+    md_file.write_text("# Policy\n\nStable content.", encoding="utf-8")
+
+    mock_store = AsyncMock()
+    mock_store.count.return_value = 5
+
+    with (
+        patch("app.rag.ingest.get_vector_store", return_value=mock_store),
+        patch("app.rag.ingest.async_session_factory") as mock_session_factory,
+        patch("app.rag.ingest.hashlib.sha256") as mock_sha,
+    ):
+        mock_sha.return_value.hexdigest.return_value = "samehash"
+        mock_session = AsyncMock()
+        existing_policy = Policy(
+            policy_id="00000000-0000-0000-0000-000000000001",
+            product="omnicare_base",
+            jurisdiction="US",
+            is_active=True,
+        )
+        old_version = PolicyVersion(
+            version_id="00000000-0000-0000-0000-000000000002",
+            policy_id="00000000-0000-0000-0000-000000000001",
+            version="current",
+            effective_from=datetime(2026, 9, 1, tzinfo=UTC),
+            effective_to=None,
+            source_hash="samehash",
+            embedding_model="text-embedding-3-small",
+            embedding_dim=1536,
+            chunker_version="v1",
+            chunk_size=600,
+            overlap=100,
+            retrieval_schema_version="v1",
+        )
+
+        def make_execute_result(*args, **kwargs):
+            query_str = str(args[0]) if args else ""
+            if "SELECT" in query_str and "policies" in query_str:
+                result = MagicMock()
+                result.scalar_one_or_none.return_value = existing_policy
+                return result
+            elif "SELECT" in query_str and "policy_versions" in query_str:
+                result = MagicMock()
+                result.scalar_one_or_none.return_value = old_version
+                return result
+            elif "SELECT" in query_str and "COUNT" in query_str:
+                result = MagicMock()
+                result.scalar_one.return_value = 5
+                return result
+            elif "pg_advisory" in query_str:
+                result = MagicMock()
+                result.scalar_one.return_value = 0
+                return result
+            return MagicMock()
+
+        mock_session.execute.side_effect = make_execute_result
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+        count = await ingest_policy(policy_path=str(md_file))
+        assert count == 5
+        mock_store.upsert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ingest_policy_reingests_when_embedding_dim_changes(tmp_path):
+    """ingest_policy() re-ingests when embedding_dim differs in snapshot."""
+    md_file = tmp_path / "policy.md"
+    md_file.write_text("# Policy\n\nContent.", encoding="utf-8")
+
+    mock_store = AsyncMock()
+    mock_store.count.return_value = 2
+
+    with (
+        patch("app.rag.ingest.get_vector_store", return_value=mock_store),
+        patch("app.rag.ingest.chunk_policy_document") as mock_chunk,
+        patch("app.rag.ingest.EmbeddingFactory.get_embedding_function") as mock_embed,
+        patch("app.rag.ingest.async_session_factory") as mock_session_factory,
+        patch("app.rag.ingest.hashlib.sha256") as mock_sha,
+        patch("app.rag.ingest._get_embedding_dim", return_value=3072),
+    ):
+        mock_sha.return_value.hexdigest.return_value = "samehash"
+        mock_chunk.return_value = [
+            {"id": "c1", "text": "Policy text", "metadata": {"source": "policy.md"}}
+        ]
+        mock_embed.return_value = AsyncMock(return_value=[[0.1] * 3072])
+        mock_session = AsyncMock()
+        mock_execute_result = MagicMock()
+        # Stored snapshot has dim 1536 but current snapshot is 3072.
+        mock_execute_result.mappings.return_value.first.return_value = {
+            "source_hash": "samehash",
+            "embedding_model": "text-embedding-3-large",
+            "embedding_dim": 1536,
+            "chunker_version": "v1",
+            "chunk_size": 600,
+            "overlap": 100,
+            "retrieval_schema_version": "v1",
+        }
+        mock_session.execute.return_value = mock_execute_result
+        mock_session_factory.return_value.__aenter__.return_value = mock_session
+
+        count = await ingest_policy(policy_path=str(md_file))
+        assert count == 1
         mock_store.upsert.assert_called_once()
 
 
@@ -353,7 +619,8 @@ async def test_ingest_policy_skips_missing_file():
 
 @pytest.mark.asyncio
 async def test_submit_claim_internal_enqueues_embedding_job():
-    """submit_claim_internal() enqueues an EmbeddingJob with the correct claim_uuid."""
+    """submit_claim_internal() creates an EmbeddingJob with the correct claim_uuid."""
+    from app.agent.tools.submit_claim import EmbeddingJob as EmbeddingJobModule
     from app.agent.tools.submit_claim import submit_claim_internal
     from app.agent.context import current_user_id
 
@@ -373,15 +640,13 @@ async def test_submit_claim_internal_enqueues_embedding_job():
     mock_session = AsyncMock()
     mock_session.add = MagicMock()
     mock_session.commit = AsyncMock()
-    mock_session.refresh = AsyncMock()
+    mock_session.flush = AsyncMock()
 
     fixed_uuid = uuid.UUID("00000000-0000-0000-0000-000000000004")
 
     with (
         patch("app.agent.tools.submit_claim.async_session_factory") as mock_factory,
-        patch(
-            "app.agent.tools.submit_claim.enqueue_embedding_job", new_callable=AsyncMock
-        ) as mock_enqueue,
+        patch.object(EmbeddingJobModule, "__init__", return_value=None) as mock_job_init,
         patch("app.agent.tools.submit_claim.uuid.uuid4", return_value=fixed_uuid),
     ):
         mock_factory.return_value.__aenter__.return_value = mock_session
@@ -398,8 +663,8 @@ async def test_submit_claim_internal_enqueues_embedding_job():
 
     assert result["success"] is True
     assert result["confirmation_id"] == "CLM-00000000"
-    mock_enqueue.assert_called_once()
-    call_kwargs = mock_enqueue.call_args[1]
+    mock_job_init.assert_called_once()
+    call_kwargs = mock_job_init.call_args[1]
     assert call_kwargs["claim_uuid"] == new_claim.id
     assert call_kwargs["claim_id"] == "CLM-TEST"
     assert call_kwargs["owner_id"] == user_uuid

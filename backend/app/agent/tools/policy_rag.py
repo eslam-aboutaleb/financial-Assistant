@@ -1,7 +1,7 @@
 """
 Policy RAG tool for the OmniCare agent.
 
-Queries pgvector (hybrid vector + BM25 search) for relevant policy documents.
+Queries pgvector (hybrid vector + PostgreSQL full-text search) for relevant policy documents.
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ settings = get_settings()
 async def query_policy(query: str) -> dict[str, Any]:
     """Searches OmniCare insurance policy documents to answer coverage questions.
 
-    Uses hybrid retrieval: pgvector similarity search combined with BM25
-    keyword search using Reciprocal Rank Fusion.
+    Uses hybrid retrieval: pgvector similarity search combined with PostgreSQL
+    full-text search using Reciprocal Rank Fusion.
 
     Use this tool whenever the user asks about:
     - What is or is not covered under a policy
@@ -85,13 +85,13 @@ async def query_policy(query: str) -> dict[str, Any]:
         # Deduplicate citations — multiple overlapping sub-chunks from the
         # same section should not generate duplicate source entries.
         if section not in seen_sections:
-            sources.append(
-                {
-                    "section": section,
-                    "source": source_file,
-                    "relevance_score": round(distance, 4),
-                }
-            )
+            source_entry: dict[str, Any] = {
+                "section": section,
+                "source": source_file,
+            }
+            if distance is not None:
+                source_entry["relevance_score"] = round(distance, 4)
+            sources.append(source_entry)
             seen_sections.add(section)
 
     return {

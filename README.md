@@ -70,7 +70,7 @@ Powered by **Google Agent Development Kit (ADK)** and **LiteLLM**, the assistant
 |  +---------------------------+  +------------------------+  +------------------------+  |
 |  |    pgvector Vector Store  |  |    Postgres Database   |  |    Postgres Database   |  |
 |  |  (policy_chunks table,    |  |  (users, conversations,|  |  (users, claims,       |  |
-|  |   hybrid vector + BM25    |  |   claims, claim_       |  |   claim_submissions    |  |
+|  |   hybrid vector + PostgreSQL full-text search    |  |   claims, claim_       |  |   claim_submissions    |  |
 |  |   RRF search)             |  |   submissions tables)  |  |   tables)              |  |
 |  +---------------------------+  +------------------------+  +------------------------+  |
 +-----------------------------------------------------------------------------------------+
@@ -138,7 +138,7 @@ Powered by **Google Agent Development Kit (ADK)** and **LiteLLM**, the assistant
 
 ### RAG (Retrieval-Augmented Generation)
 
-- **Hybrid Vector Search**: Combines pgvector L2 similarity with BM25 full-text search using Reciprocal Rank Fusion (RRF)
+- **Hybrid Vector Search**: Combines pgvector L2 similarity with PostgreSQL full-text search using Reciprocal Rank Fusion (RRF)
 - **Policy Document Ingestion**: Automatic chunking and embedding on startup (idempotent)
 - **Claims History Search**: Natural language search over user's own claims history (owner-scoped)
 - **Source Citations**: Every RAG response includes clickable source citations linking to policy sections
@@ -228,7 +228,7 @@ Powered by **Google Agent Development Kit (ADK)** and **LiteLLM**, the assistant
 | :--------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Google ADK** _(Agent Development Kit)_ | **Enterprise Agent Framework** -- Standardized, resilient agent orchestration engine providing native session tracking, tool execution loops, and guardrails. | _ **Native Tool Orchestration**: Converts standard Python functions directly into model-consumable tool definitions.<br>_ **Multi-Turn Session State**: First-class `InMemorySessionService` cleanly isolates user conversations with FIFO eviction (max 500 sessions).<br>_ **Model Agnostic**: Seamlessly interfaces with third-party providers via LiteLLM.<br>_ **Clean Pattern**: Separates system instructions, tool definitions, and runtime execution. |
 | **LiteLLM**                              | **Universal LLM Proxy & Router** -- Decouples the core agent code from vendor-specific LLM APIs.                                                              | _ **100+ Provider Support**: Switch effortlessly between OpenAI, Anthropic, Google Gemini, Azure, and open-source models.<br>_ **Zero Code Changes**: Change the model with a single environment variable (`LLM_MODEL`).<br>\* **Standardized Input/Output**: Normalizes API schemas, cost tracking, and error handling across providers.                                                                                |
-| **pgvector**                          | **PostgreSQL Vector Extension** -- Native pgvector extension inside PostgreSQL for hybrid vector + BM25 search with Reciprocal Rank Fusion. | _ **Unified Storage**: Embeddings and keyword search live in the same Postgres instance as claims and conversations.<br>_ **Hybrid Search**: Combines vector similarity (HNSW) with BM25 full-text search (tsvector/tsquery) using RRF for robust retrieval.<br>_ **No External Service**: Eliminates the need for a separate vector database process or Docker volume.                                                                                   |
+| **pgvector**                          | **PostgreSQL Vector Extension** -- Native pgvector extension inside PostgreSQL for hybrid vector + PostgreSQL full-text search with Reciprocal Rank Fusion. | _ **Unified Storage**: Embeddings and keyword search live in the same Postgres instance as claims and conversations.<br>_ **Hybrid Search**: Combines vector similarity (HNSW) with PostgreSQL full-text search (tsvector/tsquery) using RRF for robust retrieval.<br>_ **No External Service**: Eliminates the need for a separate vector database process or Docker volume.                                                                                   |
 
 ---
 
@@ -601,7 +601,7 @@ omnicare-financial/
 | **Agent Framework**    | `google-adk`                     | `^1.2.0`                 | Autonomous agent lifecycle, session handling, tool binding       |
 | **LLM Gateway**        | `litellm`                        | `^1.84.0`                | Provider-agnostic routing to OpenAI, Anthropic, Gemini, etc.     |
 | **Default Model**      | OpenAI GPT-4o-mini               | `openai/gpt-4o-mini`     | Reasoning, intent classification, and natural language synthesis |
-| **Vector DB**          | `pgvector`                      | `PostgreSQL 16`         | Native pgvector extension for hybrid vector + BM25 RAG search       |
+| **Vector DB**          | `pgvector`                      | `PostgreSQL 16`         | Native pgvector extension for hybrid vector + PostgreSQL full-text search RAG search       |
 | **Embeddings**         | OpenAI Embedding API             | `text-embedding-3-small` | Hosted embedding via OpenAI                                      |
 | **Backend Framework**  | `fastapi`                        | `0.115.6`                | Asynchronous high-performance REST API                           |
 | **ASGI Server**        | `uvicorn`                        | `0.34.0`                 | Production ASGI web server                                       |
@@ -763,7 +763,7 @@ Google ADK provides a production-grade agent runtime with native session managem
 
 ### Why pgvector over a dedicated vector database?
 
-pgvector extends PostgreSQL with native vector similarity search. By storing embeddings in the same database as claims and conversations, we eliminate the need for a separate vector database process, reduce operational complexity, and enable unified backup/restore. The hybrid search (vector + BM25 RRF) provides robust retrieval even when one modality fails.
+pgvector extends PostgreSQL with native vector similarity search. By storing embeddings in the same database as claims and conversations, we eliminate the need for a separate vector database process, reduce operational complexity, and enable unified backup/restore. The hybrid search (vector + PostgreSQL full-text search RRF) provides robust retrieval even when one modality fails.
 
 ### Why two-step claim submission?
 

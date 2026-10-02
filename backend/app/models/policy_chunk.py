@@ -3,7 +3,7 @@ SQLAlchemy ORM model for the ``policy_chunks`` table.
 
 Represents a single chunk of an ingested insurance policy document. Each
 chunk is stored with its text content, section metadata, a computed
-``tsvector`` column for BM25 full-text search, and a ``embedding`` column
+``tsvector`` column for PostgreSQL full-text search, and a ``embedding`` column
 for pgvector hybrid retrieval.
 """
 
@@ -12,8 +12,8 @@ from __future__ import annotations
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, Index, Integer, String, Text
-from sqlalchemy.dialects.postgresql import TSVECTOR, UUID
+from sqlalchemy import Column, ForeignKey, Index, Integer, String, Text, UUID
+from sqlalchemy.dialects.postgresql import TSVECTOR
 
 from app.models.base import Base
 
@@ -30,7 +30,7 @@ class PolicyChunk(Base):
         source: The source filename the chunk was extracted from.
         chunk_index: Zero-based index of the chunk within the document.
         sub_chunk_index: Zero-based index of the sub-chunk within a section.
-        tsvector: PostgreSQL tsvector for BM25 full-text search over the chunk text.
+        tsvector: PostgreSQL tsvector for PostgreSQL full-text search over the chunk text.
         embedding: pgvector embedding of the chunk text for hybrid retrieval.
     """
 
@@ -43,6 +43,16 @@ class PolicyChunk(Base):
     source = Column(String(255), nullable=False)
     chunk_index = Column(Integer, nullable=False)
     sub_chunk_index = Column(Integer, nullable=False)
+    policy_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("policies.policy_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    policy_version_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("policy_versions.version_id", ondelete="CASCADE"),
+        nullable=False,
+    )
     tsvector = Column(TSVECTOR, nullable=True)
     embedding = Column(Vector(1536), nullable=False)
 

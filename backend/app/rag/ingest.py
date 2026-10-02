@@ -4,8 +4,9 @@ Policy ingestion module for OmniCare Financial.
 Reads the raw Markdown policy document, splits it into semantically meaningful,
 overlapping chunks, and stores embeddings in the configured vector store.
 
-Ingestion is idempotent: if the vector store already contains documents, the
-process is skipped to avoid redundant embedding generation and storage costs.
+Ingestion is idempotent: if the vector store already contains documents with the
+same source hash, the process is skipped to avoid redundant embedding generation
+and storage costs.
 """
 
 from __future__ import annotations
@@ -15,14 +16,32 @@ import hashlib
 import logging
 import re
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from app.config import get_settings
 from app.database import async_session_factory
+from app.models.policy import Policy
+from app.models.policy_version import PolicyVersion
 from app.rag.embedding import EmbeddingFactory
+from app.rag.pgvector_store import _validate_embedding
 from app.rag.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
+
+_EMBEDDING_DIM_BY_MODEL: dict[str, int] = {
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+}
+
+
+def _get_embedding_dim(model_name: str) -> int:
+    """Return the expected embedding dimension for a known model name.
+
+    Falls back to 1536 for unknown models to preserve backward compatibility
+    with existing stored chunks.
+    """
+    return _EMBEDDING_DIM_BY_MODEL.get(model_name, 1536)
 
 
 def sliding_window_chunk(
@@ -144,10 +163,15 @@ async def ingest_policy(
 ) -> int:
     """Ingest policy documents into the configured vector store.
 
-    This function is idempotent: it hashes the source file and stores the
-    hash in ``policy_ingestion_meta``. If the file content has not changed
-    since the last successful ingestion, the process is skipped. This makes
-    it safe to call on every application startup.
+    This function is idempotent: it hashes the source file and compares the
+    hash against the active ``policy_versions`` row for this policy. If the
+    file content has not changed since the last successful ingestion, the
+    process is skipped. This makes it safe to call on every application
+    startup.
+
+    A PostgreSQL advisory lock keyed by the policy path is held for the
+    duration of the ingestion so that concurrent backend instances do not
+    race and duplicate ``DELETE`` + ``INSERT`` chunks.
 
     Args:
         policy_path: Optional explicit path to the policy Markdown file.
@@ -177,24 +201,128 @@ async def ingest_policy(
 
     source_hash = hashlib.sha256(file_content.encode("utf-8")).hexdigest()
 
-    # Check if we have already ingested this exact content.
     async with async_session_factory() as session:
-        result = await session.execute(
-            sa_text("SELECT source_hash FROM policy_ingestion_meta WHERE source = :source"),
+        await session.execute(
+            sa_text("SELECT pg_advisory_lock(hashtext(:source))"),
             {"source": policy_path},
         )
-        row = result.mappings().first()
-        stored_hash = row["source_hash"] if row else None
+        try:
+            chunk_count = await _do_ingest(session, policy_path, source_hash)
+            await session.commit()
+        finally:
+            await session.execute(
+                sa_text("SELECT pg_advisory_unlock(hashtext(:source))"),
+                {"source": policy_path},
+            )
 
-    if stored_hash == source_hash:
-        existing_count = await get_vector_store(table_name="policy_chunks", id_field="id").count()
+    if chunk_count:
         logger.info(
-            "Policy '%s' unchanged (hash %s); skipping ingestion. %d chunks already stored.",
+            "Ingested %d chunks from '%s' (hash %s).",
+            chunk_count,
             policy_path,
             source_hash[:12],
+        )
+    return chunk_count
+
+
+async def _do_ingest(
+    session: Any,
+    policy_path: str,
+    source_hash: str,
+) -> int:
+    """Check ingestion snapshot and perform ingestion inside an existing DB session.
+
+    This helper is designed to run inside a PostgreSQL advisory lock so that
+    concurrent ``ingest_policy()`` calls for the same source are serialized.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+    from sqlalchemy import text as sa_text  # noqa: PLC0415
+
+    settings = get_settings()
+    product = "omnicare_base"
+    jurisdiction = "US"
+    embedding_model = settings.embedding_model
+    embedding_dim = _get_embedding_dim(embedding_model)
+
+    current_snapshot = {
+        "source_hash": source_hash,
+        "embedding_model": embedding_model,
+        "embedding_dim": embedding_dim,
+        "chunker_version": "v1",
+        "chunk_size": 600,
+        "overlap": 100,
+        "retrieval_schema_version": "v1",
+    }
+
+    # Find or create the policy.
+    policy = (
+        await session.execute(
+            select(Policy).where(Policy.product == product, Policy.jurisdiction == jurisdiction)
+        )
+    ).scalar_one_or_none()
+
+    if policy is None:
+        policy = Policy(product=product, jurisdiction=jurisdiction)
+        session.add(policy)
+        await session.flush()
+
+    # Find the active version for this policy.
+    active_version = (
+        await session.execute(
+            select(PolicyVersion)
+            .where(
+                PolicyVersion.policy_id == policy.policy_id,
+                PolicyVersion.effective_to.is_(None),
+            )
+            .order_by(PolicyVersion.effective_from.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    stored_snapshot = {
+        "source_hash": active_version.source_hash if active_version else None,
+        "embedding_model": active_version.embedding_model if active_version else None,
+        "embedding_dim": active_version.embedding_dim if active_version else None,
+        "chunker_version": active_version.chunker_version if active_version else None,
+        "chunk_size": active_version.chunk_size if active_version else None,
+        "overlap": active_version.overlap if active_version else None,
+        "retrieval_schema_version": (
+            active_version.retrieval_schema_version if active_version else None
+        ),
+    }
+
+    if active_version is not None and stored_snapshot == current_snapshot:
+        existing_count = await get_vector_store(table_name="policy_chunks", id_field="id").count(
+            session=session
+        )
+        logger.info(
+            "Policy '%s' unchanged (snapshot %s); skipping ingestion. %d chunks already stored.",
+            policy_path,
+            current_snapshot,
             existing_count,
         )
         return existing_count
+
+    # Close the old active version.
+    if active_version is not None:
+        active_version.effective_to = datetime.now(UTC)
+        await session.flush()
+
+    # Create a new version for this ingestion.
+    version = PolicyVersion(
+        policy_id=policy.policy_id,
+        version="current",
+        effective_from=datetime.now(UTC),
+        source_hash=source_hash,
+        embedding_model=embedding_model,
+        embedding_dim=embedding_dim,
+        chunker_version="v1",
+        chunk_size=600,
+        overlap=100,
+        retrieval_schema_version="v1",
+    )
+    session.add(version)
+    await session.flush()
 
     chunks = chunk_policy_document(policy_path)
 
@@ -206,40 +334,25 @@ async def ingest_policy(
     texts = [c["text"] for c in chunks]
     embeddings = await embed_fn(texts)
 
+    embedding_dim = _get_embedding_dim(settings.embedding_model)
     for chunk, emb in zip(chunks, embeddings, strict=True):
+        _validate_embedding(emb, expected_dim=embedding_dim, label="policy chunk embedding")
         chunk["embedding"] = emb
 
-    source_filename = policy_path.rsplit("/", maxsplit=1)[-1]
-    async with async_session_factory() as session:
-        await session.execute(
-            sa_text("DELETE FROM policy_chunks WHERE source = :source"),
-            {"source": source_filename},
-        )
-        await session.commit()
+    # Safety delete: remove any chunks for this version (should be none for a fresh version).
+    await session.execute(
+        sa_text("DELETE FROM policy_chunks WHERE policy_version_id = :vid"),
+        {"vid": str(version.version_id)},
+    )
+
+    # Attach version/policy IDs to each chunk dict so they are included in the upsert.
+    for chunk in chunks:
+        chunk["policy_id"] = str(policy.policy_id)
+        chunk["policy_version_id"] = str(version.version_id)
 
     store = get_vector_store(table_name="policy_chunks", id_field="id")
-    await store.upsert(chunks)
+    await store.upsert(chunks, session=session)
 
-    # Record the ingestion hash so we can detect future changes.
-    async with async_session_factory() as session:
-        await session.execute(
-            sa_text("""
-                INSERT INTO policy_ingestion_meta (source, source_hash)
-                VALUES (:source, :source_hash)
-                ON CONFLICT (source) DO UPDATE SET
-                    source_hash = EXCLUDED.source_hash,
-                    ingested_at = now()
-            """),
-            {"source": policy_path, "source_hash": source_hash},
-        )
-        await session.commit()
-
-    logger.info(
-        "Ingested %d chunks from '%s' (hash %s).",
-        len(chunks),
-        policy_path,
-        source_hash[:12],
-    )
     return len(chunks)
 
 

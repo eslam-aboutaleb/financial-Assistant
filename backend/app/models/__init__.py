@@ -1,7 +1,19 @@
 from app.models.base import Base
 from app.models.claim import Claim
 from app.models.conversation import Conversation
+from app.models.policy import Policy
 from app.models.policy_chunk import PolicyChunk
+from app.models.policy_ingestion_meta import PolicyIngestionMeta
+from app.models.policy_version import PolicyVersion
 from app.models.user import User
 
-__all__ = ["Base", "User", "Claim", "Conversation", "PolicyChunk"]
+__all__ = [
+    "Base",
+    "User",
+    "Claim",
+    "Conversation",
+    "PolicyChunk",
+    "Policy",
+    "PolicyVersion",
+    "PolicyIngestionMeta",
+]

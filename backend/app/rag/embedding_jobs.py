@@ -14,13 +14,20 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.database import async_session_factory
 from app.rag.embedding import EmbeddingFactory
 from app.rag.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
+
+RETRY_SCHEDULE = [
+    timedelta(minutes=1),
+    timedelta(minutes=5),
+    timedelta(minutes=30),
+]
+MAX_ATTEMPTS = 4
 
 
 async def enqueue_embedding_job(  # noqa: PLR0913, PLR0917
@@ -30,7 +37,7 @@ async def enqueue_embedding_job(  # noqa: PLR0913, PLR0917
     claim_type: str,
     description: str,
     policy_number: str,
-    status: str,
+    claim_status: str,
 ) -> None:
     """Create an embedding job for a newly submitted claim.
 
@@ -44,7 +51,7 @@ async def enqueue_embedding_job(  # noqa: PLR0913, PLR0917
         claim_type: Type of claim.
         description: Claim description text.
         policy_number: Associated policy number.
-        status: Current claim status.
+        claim_status: Current business status of the claim.
     """
     from app.models.embedding_job import EmbeddingJob  # noqa: PLC0415
 
@@ -55,6 +62,7 @@ async def enqueue_embedding_job(  # noqa: PLR0913, PLR0917
         claim_type=claim_type,
         description=description,
         policy_number=policy_number,
+        claim_status=claim_status,
         status="pending",
         status_detail="pending",
     )
@@ -88,18 +96,32 @@ async def process_pending_jobs(limit: int = 10) -> int:
 
     processed = 0
     async with async_session_factory() as session:
+        now = datetime.now(UTC)
         result = await session.execute(
             select(EmbeddingJob)
-            .where(EmbeddingJob.status == "pending")
+            .where(
+                (EmbeddingJob.status == "pending")
+                | (
+                    (EmbeddingJob.status == "failed")
+                    & (EmbeddingJob.next_retry_at <= now)
+                    & (EmbeddingJob.retry_count < EmbeddingJob.max_attempts)
+                )
+            )
             .order_by(EmbeddingJob.created_at)
             .limit(limit)
+            .with_for_update(skip_locked=True)
         )
         jobs = result.scalars().all()
 
         for job in jobs:
+            if job.status == "failed":
+                job.status = "pending"
+                job.status_detail = None
+                job.next_retry_at = None
             job.status = "processing"
-            await session.commit()
+        await session.commit()
 
+        for job in jobs:
             try:
                 claim_amount = await session.scalar(
                     select(Claim.amount).where(Claim.claim_id == job.claim_id)
@@ -122,7 +144,7 @@ async def process_pending_jobs(limit: int = 10) -> int:
                             "claim_id": job.claim_id,
                             "policy_number": job.policy_number,
                             "claim_type": job.claim_type,
-                            "status": job.status,
+                            "status": job.claim_status,
                             "amount": float(claim_amount),
                             "description": job.description,
                             "owner_id": str(job.owner_id),
@@ -137,9 +159,16 @@ async def process_pending_jobs(limit: int = 10) -> int:
                 processed += 1
                 logger.info("Processed embedding job for claim '%s'.", job.claim_id)
             except Exception as exc:
-                job.status = "failed"
-                job.status_detail = str(exc)
                 job.retry_count += 1
+                if job.retry_count >= MAX_ATTEMPTS:
+                    job.status = "dead_letter"
+                    job.status_detail = f"Exhausted {MAX_ATTEMPTS} attempts: {exc}"
+                    job.next_retry_at = None
+                else:
+                    backoff = RETRY_SCHEDULE[min(job.retry_count - 1, len(RETRY_SCHEDULE) - 1)]
+                    job.next_retry_at = datetime.now(UTC) + backoff
+                    job.status = "failed"
+                    job.status_detail = str(exc)
                 await session.commit()
                 logger.error(
                     "Embedding job failed for claim '%s' (retry %d): %s",

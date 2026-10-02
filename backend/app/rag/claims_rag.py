@@ -13,6 +13,7 @@ from typing import Any
 from app.config import get_settings
 from app.database import async_session_factory
 from app.rag.embedding import EmbeddingFactory
+from app.rag.pgvector_store import _validate_embedding
 from app.rag.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ async def retrieve_claims_hybrid(
 ) -> list[dict[str, Any]]:
     """Hybrid search for claims belonging to a specific user.
 
-    Combines vector similarity search with BM25 keyword search using RRF.
+    Combines vector similarity search with PostgreSQL full-text search using RRF.
 
     Args:
         query: Natural language search query.
@@ -54,7 +55,14 @@ async def retrieve_claims_hybrid(
             n_results=n_results,
             threshold=distance_threshold,
             text_field="description",
-            metadata_fields=["claim_id", "policy_number", "claim_type", "status", "amount", "owner_id"],
+            metadata_fields=[
+                "claim_id",
+                "policy_number",
+                "claim_type",
+                "status",
+                "amount",
+                "owner_id",
+            ],
             owner_id=str(user_id),
         )
     except Exception as exc:
@@ -92,6 +100,7 @@ async def ingest_claim(  # noqa: PLR0913, PLR0917
     text_content = f"Claim {claim_id}: {claim_type} - {description}"
     embedding = await embed_fn([text_content])
     embedding = embedding[0]
+    _validate_embedding(embedding, expected_dim=1536, label="claim embedding")
 
     store = get_vector_store(table_name="claims", id_field="id")
     await store.upsert(

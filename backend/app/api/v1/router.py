@@ -22,6 +22,7 @@ from app.api.v1.chat_stream import router as chat_stream_router
 from app.api.v1.claims import router as claims_router
 from app.api.v1.conversations import router as conversations_router
 from app.api.v1.health import router as health_router
+from app.api.v1.rag_eval import router as rag_eval_router
 
 router = APIRouter(prefix="/api/v1")
 
@@ -31,3 +32,5 @@ router.include_router(conversations_router, tags=["Conversations"])
 router.include_router(chat_stream_router, tags=["Chat"])
 router.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 router.include_router(claims_router, prefix="/claims", tags=["Claims"])
+router.include_router(rag_eval_router, tags=["RAG Evaluation"])
+

@@ -16,11 +16,13 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.agent.context import current_user_id
 from app.database import async_session_factory
 from app.models.claim import Claim
 from app.models.claim_submission import ClaimSubmission as ClaimSubmissionModel
-from app.rag.embedding_jobs import enqueue_embedding_job
+from app.models.embedding_job import EmbeddingJob
 from app.schemas.models import ClaimSubmission
 
 logger = logging.getLogger(__name__)
@@ -125,6 +127,7 @@ async def submit_claim_internal(
     amount: float,
     description: str,
     user_uuid: uuid.UUID,
+    session: AsyncSession | None = None,
 ) -> dict[str, Any]:
     """Submit a new OmniCare insurance claim on behalf of the authenticated user.
 
@@ -138,6 +141,9 @@ async def submit_claim_internal(
         amount: Claimed amount in US dollars.
         description: Factual description of the incident.
         user_uuid: UUID of the authenticated user.
+        session: Optional existing database session. When provided, the claim
+            and embedding job are written to the same transaction and the
+            caller is responsible for committing.
 
     Returns:
         dict: Submission confirmation or error payload.
@@ -158,52 +164,66 @@ async def submit_claim_internal(
 
     confirmation_id = f"CLM-{uuid.uuid4().hex[:8].upper()}"
 
-    try:
-        async with async_session_factory() as session:
-            new_claim = Claim(
-                claim_id=confirmation_id,
-                policy_number=validated.policy_number,
-                claim_type=validated.claim_type,
-                status="Submitted",
-                amount=validated.amount,
-                description=validated.description,
-                owner_id=user_uuid,
-            )
-            session.add(new_claim)
-            await session.commit()
+    async def _submit(session: AsyncSession) -> dict[str, Any]:
+        new_claim = Claim(
+            claim_id=confirmation_id,
+            policy_number=validated.policy_number,
+            claim_type=validated.claim_type,
+            status="Submitted",
+            amount=validated.amount,
+            description=validated.description,
+            owner_id=user_uuid,
+        )
+        session.add(new_claim)
+        await session.flush()
 
-        await enqueue_embedding_job(
+        job = EmbeddingJob(
             claim_uuid=new_claim.id,
             claim_id=new_claim.claim_id,
             owner_id=new_claim.owner_id,
             claim_type=new_claim.claim_type,
             description=new_claim.description,
             policy_number=new_claim.policy_number,
-            status=new_claim.status,
+            claim_status=new_claim.status,
+            status="pending",
+            status_detail="pending",
         )
+        session.add(job)
+        await session.commit()
+
+        logger.info(
+            "Claim '%s' submitted for policy '%s'.",
+            confirmation_id,
+            validated.policy_number,
+        )
+
+        return {
+            "success": True,
+            "confirmation_id": confirmation_id,
+            "status": "Submitted",
+            "policy_number": validated.policy_number,
+            "claim_type": validated.claim_type,
+            "amount": validated.amount,
+            "description": validated.description,
+            "citation": (
+                f"Claim {confirmation_id} recorded in the OmniCare claims system "
+                f"under policy {validated.policy_number}."
+            ),
+            "message": (
+                f"Your claim {confirmation_id} has been successfully submitted "
+                "and is now being processed. Keep this ID for your records."
+            ),
+        }
+
+    try:
+        if session is None:
+            async with async_session_factory() as session:
+                return await _submit(session)
+        else:
+            return await _submit(session)
     except Exception as exc:
         logger.exception("Failed to persist claim '%s': %s", confirmation_id, exc)
         return {
             "success": False,
             "error": "Your claim could not be saved. Please try again or contact support.",
         }
-
-    logger.info("Claim '%s' submitted for policy '%s'.", confirmation_id, validated.policy_number)
-
-    return {
-        "success": True,
-        "confirmation_id": confirmation_id,
-        "status": "Submitted",
-        "policy_number": validated.policy_number,
-        "claim_type": validated.claim_type,
-        "amount": validated.amount,
-        "description": validated.description,
-        "citation": (
-            f"Claim {confirmation_id} recorded in the OmniCare claims system "
-            f"under policy {validated.policy_number}."
-        ),
-        "message": (
-            f"Your claim {confirmation_id} has been successfully submitted "
-            "and is now being processed. Keep this ID for your records."
-        ),
-    }

@@ -3,7 +3,7 @@ SQLAlchemy ORM model for the ``claims`` table.
 
 Represents an insurance claim filed by an OmniCare policyholder. Each claim
 is linked to its owner via a foreign key, stores structured claim metadata,
-and includes a computed ``tsvector`` column for BM25 full-text search and a
+and includes a computed ``tsvector`` column for PostgreSQL full-text search and a
 ``embedding`` column for pgvector hybrid retrieval.
 """
 
@@ -31,7 +31,7 @@ class Claim(Base):
         description: Factual description of the incident.
         owner_id: Foreign key to the user who filed the claim.
         embedding: pgvector embedding of the claim text for hybrid search.
-        tsvector: PostgreSQL tsvector for BM25 full-text search over the description.
+        tsvector: PostgreSQL tsvector for PostgreSQL full-text search over the description.
     """
 
     __tablename__ = "claims"

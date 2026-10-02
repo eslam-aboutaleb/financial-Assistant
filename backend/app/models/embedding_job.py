@@ -26,9 +26,11 @@ class EmbeddingJob(Base):
         claim_type: Type of claim.
         description: Claim description text.
         policy_number: Associated policy number.
-        status: Current job status (pending, processing, completed, failed).
+        status: Current job status (pending, processing, completed, failed, dead_letter).
         status_detail: Human-readable status or error message.
         retry_count: Number of times this job has been retried.
+        next_retry_at: Timestamp when the job is eligible for retry after failure.
+        max_attempts: Maximum number of processing attempts before dead-lettering.
         created_at: Timestamp of job creation.
         completed_at: Timestamp of job completion (if applicable).
     """
@@ -44,9 +46,12 @@ class EmbeddingJob(Base):
     claim_type: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
     policy_number: Mapped[str] = mapped_column(String, nullable=False)
+    claim_status: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     status_detail: Mapped[str | None] = mapped_column(String, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )

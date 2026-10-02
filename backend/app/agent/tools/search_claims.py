@@ -6,7 +6,7 @@ user asks about their claims history without providing a specific claim ID
 (e.g., "Have I ever filed a claim for water damage?").
 
 Retrieval strategy:
-  - Hybrid vector search via pgvector combined with BM25 full-text search
+  - Hybrid vector search via pgvector combined with PostgreSQL full-text search
     over the Postgres ``claims`` table using Reciprocal Rank Fusion.
 
 Security:

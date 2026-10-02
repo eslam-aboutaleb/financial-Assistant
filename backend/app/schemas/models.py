@@ -19,7 +19,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -362,3 +362,85 @@ class UserMe(BaseModel):
 # Rebuild models that reference uuid to resolve forward references.
 ConversationListResponse.model_rebuild()
 ConversationDetailResponse.model_rebuild()
+
+
+# --- RAG Evaluation Schemas ---------------------------------------------
+
+
+class RagEvalRequest(BaseModel):
+    """Request schema for initiating a RAG evaluation run.
+
+    Attributes:
+        mode: Evaluation mode ('retrieval-only' or 'end-to-end').
+        judge: Evaluation judge strategy ('heuristic' or 'llm').
+        n_results: Maximum candidates to retrieve per query.
+        category: Optional category filter (coverage, limits, exclusions, etc.).
+        difficulty: Optional difficulty filter (easy, medium, hard).
+    """
+
+    mode: Literal["retrieval-only", "end-to-end"] = Field(
+        default="end-to-end",
+        description="Evaluation mode: 'retrieval-only' or 'end-to-end'",
+    )
+    judge: Literal["heuristic", "llm"] = Field(
+        default="heuristic",
+        description="Judge strategy: 'heuristic' or 'llm'",
+    )
+    n_results: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Number of candidates to retrieve per query",
+    )
+    category: str | None = Field(
+        default=None,
+        description="Optional filter by question category",
+    )
+    difficulty: str | None = Field(
+        default=None,
+        description="Optional filter by query difficulty",
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "mode": "end-to-end",
+                "judge": "heuristic",
+                "n_results": 5,
+                "category": None,
+                "difficulty": None,
+            }
+        }
+    )
+
+
+class RagEvalResponse(BaseModel):
+    """Response schema containing RAG evaluation metrics and results.
+
+    Attributes:
+        timestamp: ISO timestamp when evaluation completed.
+        config: Configuration dictionary used for the evaluation run.
+        retrieval_metrics: Aggregated retrieval metrics (recall, precision, MRR, latency).
+        answer_metrics: Aggregated answer quality metrics (faithfulness, relevance, etc.).
+        per_sample_results: Granular per-sample evaluation breakdown.
+        summary: Human-readable evaluation summary report.
+        duration_seconds: Total execution duration in seconds.
+    """
+
+    timestamp: str = Field(..., description="ISO 8601 timestamp of evaluation completion")
+    config: dict[str, Any] = Field(..., description="Configuration used for the run")
+    retrieval_metrics: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Aggregated retrieval quality metrics",
+    )
+    answer_metrics: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Aggregated answer quality metrics",
+    )
+    per_sample_results: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Per-sample evaluation results",
+    )
+    summary: str = Field(..., description="Formatted summary report")
+    duration_seconds: float = Field(..., description="Total execution duration in seconds")
+
