@@ -138,31 +138,31 @@ async def chat_stream(
             # when the ADK generator is closed across async contexts.
             if "was created in a different Context" in str(err):
                 logger.debug("Suppressed OpenTelemetry context mismatch during streaming: %s", err)
-                return
-            raise
+            else:
+                logger.exception("ValueError during streaming: %s", err)
+                yield "data: {'error': 'Streaming failed'}\n\n"
         except Exception as err:
             logger.exception("Error during streaming: %s", err)
             yield "data: {'error': 'Streaming failed'}\n\n"
-            return
-
-        # Emit response_complete with accumulated sources after the stream ends.
-        # This guarantees the frontend receives sources even if the final ADK
-        # event was transformed into a text_delta because it contained content.
-        yield (
-            f"data: "
-            f'{{"type": "response_complete", "sources": {json.dumps(stream_result.sources)}}}\n\n'
-        )
-
-        # Persist conversation turn after stream completes
-        if stream_result.session_id:
-            asyncio.create_task(
-                _persist_streamed_turn(
-                    user_id=current_user_id,
-                    session_id=stream_result.session_id,
-                    message=message,
-                    result=stream_result,
-                )
+        finally:
+            # Always emit response_complete and persist the conversation turn,
+            # even when the LLM stream fails. This guarantees the frontend
+            # receives a terminal event and the conversation appears in the
+            # sidebar regardless of downstream errors.
+            yield (
+                f"data: "
+                f'{{"type": "response_complete", "sources": {json.dumps(stream_result.sources)}}}\n\n'
             )
+
+            if stream_result.session_id:
+                asyncio.create_task(
+                    _persist_streamed_turn(
+                        user_id=current_user_id,
+                        session_id=stream_result.session_id,
+                        message=message,
+                        result=stream_result,
+                    )
+                )
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
