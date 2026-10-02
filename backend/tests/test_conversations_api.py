@@ -196,3 +196,111 @@ async def test_sidebar_ids_match_list_response():
     returned_ids = [str(c.id) for c in list_response.conversations]
     assert str(conv_a.id) in returned_ids
     assert str(conv_b.id) in returned_ids
+
+
+@pytest.mark.asyncio
+async def test_old_conversations_remain_visible_across_sessions():
+    """Conversations created earlier should still appear in later list calls."""
+    user_id = "00000000-0000-0000-0000-000000000001"
+
+    old_conv = _mock_conversation_row(
+        user_id=uuid.UUID(user_id),
+        title="Old conversation",
+        updated_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+    )
+    new_conv = _mock_conversation_row(
+        user_id=uuid.UUID(user_id),
+        title="New conversation",
+        updated_at=datetime(2026, 1, 2, 0, 0, 0, tzinfo=timezone.utc),
+    )
+
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = [new_conv, old_conv]
+
+    mock_session = AsyncMock()
+    mock_session.execute.return_value = list_result
+
+    # First session: list conversations
+    first_response = await list_conversations(current_user_id=user_id, session=mock_session)
+    assert len(first_response.conversations) == 2
+    old_ids = [c.id for c in first_response.conversations]
+    assert str(old_conv.id) in [str(i) for i in old_ids]
+
+    # Second session: list again with a fresh mock result
+    list_result2 = MagicMock()
+    list_result2.scalars.return_value.all.return_value = [new_conv, old_conv]
+    mock_session2 = AsyncMock()
+    mock_session2.execute.return_value = list_result2
+
+    second_response = await list_conversations(current_user_id=user_id, session=mock_session2)
+    assert len(second_response.conversations) == 2
+    second_ids = [c.id for c in second_response.conversations]
+    assert str(old_conv.id) in [str(i) for i in second_ids]
+    assert str(new_conv.id) in [str(i) for i in second_ids]
+
+
+@pytest.mark.asyncio
+async def test_sidebar_click_id_returns_correct_conversation():
+    """IDs shown in the sidebar should resolve to the correct conversation detail."""
+    user_id = "00000000-0000-0000-0000-000000000001"
+    conv_id = uuid.uuid4()
+
+    conv = _mock_conversation_row(id=conv_id, user_id=uuid.UUID(user_id), title="Sidebar click")
+
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = [conv]
+
+    detail_result = MagicMock()
+    detail_result.scalar_one_or_none.return_value = conv
+
+    msg_result = MagicMock()
+    msg_result.scalars.return_value.all.return_value = []
+
+    mock_session = AsyncMock()
+    mock_session.execute.side_effect = [list_result, detail_result, msg_result]
+
+    # List conversations (sidebar)
+    list_response = await list_conversations(current_user_id=user_id, session=mock_session)
+    assert len(list_response.conversations) == 1
+    sidebar_conv = list_response.conversations[0]
+    assert sidebar_conv.title == "Sidebar click"
+
+    # Click the conversation ID from the sidebar
+    from app.api.v1.conversations import get_conversation
+
+    detail_response = await get_conversation(
+        conversation_id=str(sidebar_conv.id),
+        current_user_id=user_id,
+        session=mock_session,
+    )
+    assert detail_response.id == sidebar_conv.id
+    assert detail_response.title == "Sidebar click"
+
+
+@pytest.mark.asyncio
+async def test_new_chat_does_not_break_existing_sidebar_conversations():
+    """Creating a new chat should not remove or corrupt existing conversations."""
+    user_id = "00000000-0000-0000-0000-000000000001"
+
+    existing = _mock_conversation_row(
+        user_id=uuid.UUID(user_id),
+        title="Existing conversation",
+        updated_at=datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+    )
+    new_chat = _mock_conversation_row(
+        user_id=uuid.UUID(user_id),
+        title="New chat",
+        updated_at=datetime(2026, 1, 3, 0, 0, 0, tzinfo=timezone.utc),
+    )
+
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = [new_chat, existing]
+
+    mock_session = AsyncMock()
+    mock_session.execute.return_value = list_result
+
+    response = await list_conversations(current_user_id=user_id, session=mock_session)
+    assert len(response.conversations) == 2
+    titles = [c.title for c in response.conversations]
+    assert "Existing conversation" in titles
+    assert "New chat" in titles
