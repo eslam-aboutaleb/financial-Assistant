@@ -31,9 +31,7 @@ def upgrade() -> None:
         sa.Column("max_attempts", sa.Integer, nullable=False, server_default="4"),
     )
 
-    op.execute(
-        "UPDATE embedding_jobs SET max_attempts = 4 WHERE max_attempts IS NULL"
-    )
+    op.execute("UPDATE embedding_jobs SET max_attempts = 4 WHERE max_attempts IS NULL")
 
     op.execute(
         "UPDATE embedding_jobs SET next_retry_at = now() "

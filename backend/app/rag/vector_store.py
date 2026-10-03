@@ -65,7 +65,7 @@ class VectorStore(ABC):
 def get_vector_store(
     table_name: str,
     id_field: str = "id",
-    embedding_dim: int = 1536,
+    embedding_dim: int | None = None,
 ) -> VectorStore:
     """Factory function to create a vector store instance.
 

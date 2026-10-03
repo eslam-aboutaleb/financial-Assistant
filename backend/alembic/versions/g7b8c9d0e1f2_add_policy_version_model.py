@@ -23,19 +23,33 @@ def upgrade() -> None:
     # Create policies table
     op.create_table(
         "policies",
-        sa.Column("policy_id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "policy_id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False
+        ),
         sa.Column("product", sa.Text(), nullable=False),
         sa.Column("jurisdiction", sa.Text(), nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.text("true"), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("policy_id"),
     )
 
     # Create policy_versions table
     op.create_table(
         "policy_versions",
-        sa.Column("version_id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
+        sa.Column(
+            "version_id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False
+        ),
         sa.Column("policy_id", sa.UUID(), nullable=False),
         sa.Column("version", sa.Text(), nullable=False),
         sa.Column("effective_from", sa.DateTime(timezone=True), nullable=False),
@@ -47,7 +61,12 @@ def upgrade() -> None:
         sa.Column("chunk_size", sa.Text(), nullable=True),
         sa.Column("overlap", sa.Text(), nullable=True),
         sa.Column("retrieval_schema_version", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("created_by", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(["policy_id"], ["policies.policy_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("version_id"),

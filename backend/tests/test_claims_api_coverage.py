@@ -1,11 +1,10 @@
 """Coverage tests for app.api.v1.claims uncovered paths."""
+
 from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 
 class TestClaimsAPI:
@@ -146,7 +145,9 @@ class TestClaimsAPI:
             mock_result.scalar_one_or_none.return_value = mock_submission
             mock_session.execute.return_value = mock_result
             mock_factory.return_value.__aenter__.return_value = mock_session
-            with patch("app.api.v1.claims.submit_claim_internal", new_callable=AsyncMock) as mock_submit:
+            with patch(
+                "app.api.v1.claims.submit_claim_internal", new_callable=AsyncMock
+            ) as mock_submit:
                 mock_submit.return_value = {
                     "success": True,
                     "confirmation_id": "CLM-NEW",

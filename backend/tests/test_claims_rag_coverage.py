@@ -1,4 +1,5 @@
 """Coverage tests for app.rag.claims_rag uncovered paths."""
+
 from __future__ import annotations
 
 import uuid

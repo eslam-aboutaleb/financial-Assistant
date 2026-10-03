@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "frozen detail",
+    "details": null
+  }
+}

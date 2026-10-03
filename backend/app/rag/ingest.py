@@ -19,29 +19,27 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.config import get_settings
 from app.database import async_session_factory
 from app.models.policy import Policy
 from app.models.policy_version import PolicyVersion
 from app.rag.embedding import EmbeddingFactory
+from app.rag.embedding_dimensions import get_embedding_dimension
 from app.rag.pgvector_store import _validate_embedding
 from app.rag.vector_store import get_vector_store
 
 logger = logging.getLogger(__name__)
 
-_EMBEDDING_DIM_BY_MODEL: dict[str, int] = {
-    "text-embedding-3-small": 1536,
-    "text-embedding-3-large": 3072,
-}
-
 
 def _get_embedding_dim(model_name: str) -> int:
     """Return the expected embedding dimension for a known model name.
 
-    Falls back to 1536 for unknown models to preserve backward compatibility
-    with existing stored chunks.
+    Delegates to :mod:`app.rag.embedding_dimensions`, which is the single source of
+    truth shared by ingestion, retrieval, and the vector stores.
     """
-    return _EMBEDDING_DIM_BY_MODEL.get(model_name, 1536)
+    return get_embedding_dimension(model_name)
 
 
 def sliding_window_chunk(
@@ -209,11 +207,27 @@ async def ingest_policy(
         try:
             chunk_count = await _do_ingest(session, policy_path, source_hash)
             await session.commit()
+        except Exception:
+            # Roll back before the lock is released. A failed statement leaves the
+            # session in an aborted transaction, and any further command on it raises
+            # InFailedSQLTransactionError -- which would replace the real ingestion
+            # failure with a confusing error about the advisory lock.
+            await session.rollback()
+            raise
         finally:
-            await session.execute(
-                sa_text("SELECT pg_advisory_unlock(hashtext(:source))"),
-                {"source": policy_path},
-            )
+            try:
+                await session.execute(
+                    sa_text("SELECT pg_advisory_unlock(hashtext(:source))"),
+                    {"source": policy_path},
+                )
+            except SQLAlchemyError:
+                # Never let lock cleanup mask the outcome. Ending the transaction closes
+                # the connection, which releases a session-level advisory lock anyway.
+                logger.warning(
+                    "Could not explicitly release the advisory lock for '%s'; "
+                    "releasing it by closing the session instead.",
+                    policy_path,
+                )
 
     if chunk_count:
         logger.info(
@@ -303,10 +317,19 @@ async def _do_ingest(
         )
         return existing_count
 
-    # Close the old active version.
+    # Close the old active version and remove its chunks from the
+    # search index. chunk_id is position-based ("policy_chunk_{index}"),
+    # so the new version's chunks would violate the unique constraint
+    # on chunk_id if the retired version's chunks stayed. The index
+    # always reflects the current version; version history itself
+    # remains in policy_versions.
     if active_version is not None:
         active_version.effective_to = datetime.now(UTC)
         await session.flush()
+        await session.execute(
+            sa_text("DELETE FROM policy_chunks WHERE policy_version_id = :vid"),
+            {"vid": str(active_version.version_id)},
+        )
 
     # Create a new version for this ingestion.
     version = PolicyVersion(
@@ -345,10 +368,15 @@ async def _do_ingest(
         {"vid": str(version.version_id)},
     )
 
-    # Attach version/policy IDs to each chunk dict so they are included in the upsert.
+    # Attach version/policy IDs to each chunk so they are persisted as columns.
+    # These must go inside ``metadata``: the vector store derives the INSERT column list
+    # from ``document["metadata"]`` only. Setting them at the top level silently drops
+    # them, which left policy_chunks.policy_id NULL and aborted ingestion on the
+    # not-null constraint.
     for chunk in chunks:
-        chunk["policy_id"] = str(policy.policy_id)
-        chunk["policy_version_id"] = str(version.version_id)
+        chunk.setdefault("metadata", {})
+        chunk["metadata"]["policy_id"] = str(policy.policy_id)
+        chunk["metadata"]["policy_version_id"] = str(version.version_id)
 
     store = get_vector_store(table_name="policy_chunks", id_field="id")
     await store.upsert(chunks, session=session)

@@ -381,7 +381,10 @@ async def test_hybrid_search_vector_row_number_tie_break():
             )
             stmt = mock_session.execute.call_args[0][0]
             sql = str(stmt)
-            assert "ORDER BY\n                               embedding <-> cast(:embedding as vector),\n                               id" in sql
+            assert (
+                "ORDER BY\n                               embedding <-> cast(:embedding as vector),\n                               id"
+                in sql
+            )
 
 
 @pytest.mark.asyncio
@@ -413,7 +416,10 @@ async def test_hybrid_search_keyword_row_number_tie_break():
             )
             stmt = mock_session.execute.call_args[0][0]
             sql = str(stmt)
-            assert "ORDER BY\n                               ts_rank(tsvector, plainto_tsquery('english', :query)) DESC,\n                               id" in sql
+            assert (
+                "ORDER BY\n                               ts_rank(tsvector, plainto_tsquery('english', :query)) DESC,\n                               id"
+                in sql
+            )
 
 
 @pytest.mark.asyncio
@@ -477,6 +483,12 @@ async def test_hybrid_search_tie_break_uses_custom_id_field():
             )
             stmt = mock_session.execute.call_args[0][0]
             sql = str(stmt)
-            assert "ORDER BY\n                               embedding <-> cast(:embedding as vector),\n                               chunk_id" in sql
-            assert "ORDER BY\n                               ts_rank(tsvector, plainto_tsquery('english', :query)) DESC,\n                               chunk_id" in sql
+            assert (
+                "ORDER BY\n                               embedding <-> cast(:embedding as vector),\n                               chunk_id"
+                in sql
+            )
+            assert (
+                "ORDER BY\n                               ts_rank(tsvector, plainto_tsquery('english', :query)) DESC,\n                               chunk_id"
+                in sql
+            )
             assert "ORDER BY rrf_score DESC, chunk_id" in sql

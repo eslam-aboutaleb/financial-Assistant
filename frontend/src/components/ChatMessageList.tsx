@@ -11,7 +11,7 @@ import { Shield, ChevronDown } from "lucide-react";
 
 interface ChatMessageListProps {
   messages: Message[];
-  messagesEndRef: React.RefObject<HTMLDivElement | null>;
+  messagesEndRef: React.RefObject<HTMLDivElement>;
   showScrollButton: boolean;
   onScrollToBottom: () => void;
   isLoading: boolean;

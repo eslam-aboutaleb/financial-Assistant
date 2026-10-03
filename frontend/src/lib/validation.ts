@@ -6,7 +6,7 @@ export const ChatResponseSchema = z.object({
   tool_calls: z.array(
     z.object({
       name: z.string(),
-      arguments: z.record(z.unknown()),
+      arguments: z.record(z.string(), z.unknown()),
       result: z.unknown().optional(),
     }),
   ),
@@ -35,7 +35,7 @@ export const ConversationDetailSchema = z.object({
         .array(
           z.object({
             name: z.string(),
-            arguments: z.record(z.unknown()),
+            arguments: z.record(z.string(), z.unknown()),
             result: z.unknown().optional(),
           }),
         )

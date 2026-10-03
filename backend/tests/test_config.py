@@ -28,19 +28,35 @@ def test_default_settings():
 
 def test_jwt_secret_key_validation():
     """Verify JWT_SECRET_KEY default and validation."""
-    # Default is development, should allow 'change-me'
-    cfg = Settings(environment="development")
-    assert "change-me" in cfg.jwt_secret_key
+    # Development is unrestricted: a placeholder is accepted there.
+    cfg = Settings(environment="development", jwt_secret_key="change-me")  # noqa: S106 - validator input, not a secret
+    assert cfg.jwt_secret_key == "change-me"
 
-    # In production, 'change-me' should raise ValidationError
+    # In production, a placeholder must raise ValidationError. The value below is 48
+    # characters so that only the placeholder rule applies, not the length rule.
     with pytest.raises(ValidationError) as exc_info:
         Settings(
             environment="production",
-            jwt_secret_key="super-secret-key-for-development-only-change-me",  # noqa: S106
+            jwt_secret_key="change-me-change-me-change-me-change-me-xx",  # noqa: S106
         )
-    assert "JWT_SECRET_KEY must be set to a secure random value in production" in str(
-        exc_info.value
-    )
+    assert "placeholder" in str(exc_info.value)
+
+    # A placeholder is refused even when it is long enough to satisfy the length rule,
+    # which is the case that previously let .env.example through to production.
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="production",
+            jwt_secret_key="your-secret-key-here",  # noqa: S106 - validator input
+        )
+
+    # A short but non-placeholder secret is refused on length.
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(environment="production", jwt_secret_key="k" * 16)  # noqa: S106 - validator input
+    assert "at least 32 characters" in str(exc_info.value)
+
+    # A strong secret is accepted.
+    strong = Settings(environment="production", jwt_secret_key="k" * 48)  # noqa: S106 - validator input
+    assert strong.jwt_secret_key == "k" * 48
 
 
 def test_cors_origins_parsing():

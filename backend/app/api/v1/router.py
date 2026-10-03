@@ -33,4 +33,3 @@ router.include_router(chat_stream_router, tags=["Chat"])
 router.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 router.include_router(claims_router, prefix="/claims", tags=["Claims"])
 router.include_router(rag_eval_router, tags=["RAG Evaluation"])
-

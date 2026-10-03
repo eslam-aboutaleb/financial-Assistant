@@ -1,0 +1,74 @@
+{
+  "description": "Tier B query-class matrix. Each entry records a query, its class, and the policy sections a correct retriever must surface. Relevance judgments for the metrics baseline are derived from expected_sections via the section-to-chunk-id mapping read from the database.",
+  "queries": [
+    {
+      "id": "exact-keyword-water-damage",
+      "class": "exact-keyword",
+      "query": "water damage pipe burst",
+      "expected_sections": ["Section 1: Home Water Damage Coverage"]
+    },
+    {
+      "id": "exact-keyword-gradual-leaks",
+      "class": "exact-keyword",
+      "query": "gradual leaks excluded",
+      "expected_sections": ["Section 1: Home Water Damage Coverage"]
+    },
+    {
+      "id": "exact-keyword-appraisal",
+      "class": "exact-keyword",
+      "query": "appraisal receipts",
+      "expected_sections": ["Section 2: Personal Property Protection"]
+    },
+    {
+      "id": "exact-keyword-preamble",
+      "class": "exact-keyword",
+      "query": "general insurance policy 2026",
+      "expected_sections": ["OmniCare General Insurance Policy 2026"]
+    },
+    {
+      "id": "semantic-stemming",
+      "class": "semantic",
+      "query": "burst pipes flooding",
+      "expected_sections": ["Section 1: Home Water Damage Coverage"]
+    },
+    {
+      "id": "synonym-vector-only",
+      "class": "synonym",
+      "query": "jewelry and watches",
+      "expected_sections": ["Section 2: Personal Property Protection"]
+    },
+    {
+      "id": "ambiguous-covered",
+      "class": "ambiguous",
+      "query": "covered",
+      "expected_sections": [
+        "Section 1: Home Water Damage Coverage",
+        "Section 2: Personal Property Protection"
+      ]
+    },
+    {
+      "id": "followup-deductible",
+      "class": "follow-up",
+      "query": "what is the deductible",
+      "expected_sections": ["Section 1: Home Water Damage Coverage"]
+    },
+    {
+      "id": "conflicting-exclusion",
+      "class": "conflicting-documents",
+      "query": "are gradual leaks covered",
+      "expected_sections": ["Section 1: Home Water Damage Coverage"]
+    },
+    {
+      "id": "out-of-scope",
+      "class": "out-of-scope",
+      "query": "airline baggage delay",
+      "expected_sections": []
+    },
+    {
+      "id": "no-result",
+      "class": "no-result",
+      "query": "quantum computing",
+      "expected_sections": []
+    }
+  ]
+}

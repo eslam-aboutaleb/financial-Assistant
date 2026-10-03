@@ -28,7 +28,7 @@ export default function ToolCallBadge({ toolCalls }: ToolCallBadgeProps) {
   return (
     <div className="flex flex-col gap-2 mt-4">
       {toolCalls.map((call, idx) => (
-        <ToolCallItem key={idx} call={call} index={idx} />
+        <ToolCallItem key={idx} call={call} />
       ))}
     </div>
   );
@@ -146,7 +146,7 @@ function ReceiptCard({ result }: { result: any }) {
   );
 }
 
-function ToolCallItem({ call, index }: { call: ToolCall; index: number }) {
+function ToolCallItem({ call }: { call: ToolCall }) {
   let isRichUI = false;
 
   if (
@@ -183,19 +183,19 @@ function ToolCallItem({ call, index }: { call: ToolCall; index: number }) {
             Arguments:
           </span>
           <pre className="mt-1 text-insurance-ink">
-            {JSON.stringify(call.arguments, null, 2)}
+            {JSON.stringify(call.arguments, null, 2) ?? ""}
           </pre>
         </div>
-        {call.result && (
+        {call.result !== undefined && call.result !== null ? (
           <div>
             <span className="text-insurance-ink-tertiary select-none">
               Result:
             </span>
             <pre className="mt-1 text-insurance-success">
-              {JSON.stringify(call.result, null, 2)}
+              {JSON.stringify(call.result, null, 2) ?? ""}
             </pre>
           </div>
-        )}
+        ) : null}
       </div>
     </details>
   );

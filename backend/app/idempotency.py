@@ -82,15 +82,19 @@ def make_idempotency_key(user_id: str, message: str) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def get_cached_response(key: str) -> dict[str, Any] | None:
-    """
-    Return a cached response if the key exists and has not expired.
+def get_cached_entry(key: str) -> dict[str, Any] | None:
+    """Return the full cache entry for the key if it exists and has not expired.
+
+    Callers that need the stored request hash must use this rather than
+    :func:`get_cached_response`, which returns only the response body and would make
+    the body-mismatch check unreachable.
 
     Args:
         key: The idempotency key to look up.
 
     Returns:
-        The cached response dict, or ``None`` if absent or expired.
+        The entry dict (``response``, ``request_hash``, ``cached_at``), or ``None`` if
+        absent or expired.
     """
     entry = _cache.get(key)
     if entry is None:
@@ -98,7 +102,6 @@ def get_cached_response(key: str) -> dict[str, Any] | None:
 
     age = time.monotonic() - entry["cached_at"]
     if age > _TTL_SECONDS:
-        # Lazily evict expired entry
         _cache.pop(key, None)
         _locks.pop(key, None)
         logger.debug("Idempotency key '%s' expired after %.1fs.", key, age)
@@ -109,7 +112,21 @@ def get_cached_response(key: str) -> dict[str, Any] | None:
         key,
         age,
     )
-    return entry["response"]
+    return entry
+
+
+def get_cached_response(key: str) -> dict[str, Any] | None:
+    """
+    Return a cached response if the key exists and has not expired.
+
+    Args:
+        key: The idempotency key to look up.
+
+    Returns:
+        The cached response dict, or ``None`` if absent or expired.
+    """
+    entry = get_cached_entry(key)
+    return None if entry is None else entry["response"]
 
 
 def store_response(key: str, response: dict[str, Any], request_hash: str) -> None:
@@ -193,9 +210,10 @@ def idempotent_endpoint() -> Callable[[F], F]:
                 )
 
                 async with _locks[namespaced_key]:
-                    cached = get_cached_response(namespaced_key)
-                    if cached is not None:
-                        cached_hash = cached.get("request_hash", "")
+                    cached_entry = get_cached_entry(namespaced_key)
+                    if cached_entry is not None:
+                        cached = cached_entry["response"]
+                        cached_hash = cached_entry.get("request_hash", "")
                         body_mismatch = (
                             cached_hash
                             and current_request_hash

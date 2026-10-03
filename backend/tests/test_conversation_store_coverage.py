@@ -1,7 +1,7 @@
 """Coverage tests for app.agent.conversation_store uncovered paths."""
+
 from __future__ import annotations
 
-import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,9 +16,7 @@ class TestConversationStore:
         mock_session.add = MagicMock()
         mock_session.commit = AsyncMock()
         mock_session.flush = AsyncMock()
-        mock_session.execute = AsyncMock(
-            return_value=MagicMock(scalar_one_or_none=lambda: None)
-        )
+        mock_session.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: None))
 
         with patch("app.agent.conversation_store.async_session_factory") as mock_factory:
             mock_factory.return_value.__aenter__.return_value = mock_session

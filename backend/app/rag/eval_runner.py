@@ -20,7 +20,7 @@ import json
 import logging
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any
 
 from app.rag.answer_evaluator import (
@@ -118,27 +118,31 @@ async def _run_retrieval_eval(
             context_parts = [r.get("document", "") for r in results]
             context = "\n---\n".join(context_parts)
 
-            per_sample.append({
-                "query": sample.query,
-                "category": sample.category.value,
-                "difficulty": sample.difficulty.value,
-                "expected_sections": sample.expected_sections,
-                "retrieved_sections": list(retrieved_sections),
-                "recall": round(recall, 4),
-                "precision": round(precision, 4),
-                "mrr": round(mrr, 4),
-                "latency_ms": round(latency_ms, 2),
-                "chunks_found": len(results),
-                "context": context,
-            })
+            per_sample.append(
+                {
+                    "query": sample.query,
+                    "category": sample.category.value,
+                    "difficulty": sample.difficulty.value,
+                    "expected_sections": sample.expected_sections,
+                    "retrieved_sections": list(retrieved_sections),
+                    "recall": round(recall, 4),
+                    "precision": round(precision, 4),
+                    "mrr": round(mrr, 4),
+                    "latency_ms": round(latency_ms, 2),
+                    "chunks_found": len(results),
+                    "context": context,
+                }
+            )
         except Exception as exc:
             logger.error("Retrieval eval failed for '%s': %s", sample.query, exc)
-            per_sample.append({
-                "query": sample.query,
-                "category": sample.category.value,
-                "difficulty": sample.difficulty.value,
-                "error": str(exc),
-            })
+            per_sample.append(
+                {
+                    "query": sample.query,
+                    "category": sample.category.value,
+                    "difficulty": sample.difficulty.value,
+                    "error": str(exc),
+                }
+            )
 
     # Compute aggregate retrieval metrics
     valid = [s for s in per_sample if "error" not in s]
@@ -212,26 +216,30 @@ async def _run_answer_eval(
             metrics.avg_conciseness += score.conciseness
             metrics.avg_overall += score.overall
 
-            answer_details.append({
-                "query": sample.query,
-                "gold_answer": sample.gold_answer,
-                "generated_answer": generated_answer[:500],
-                "chunks_found": chunks_found,
-                "faithfulness": score.faithfulness,
-                "relevance": score.relevance,
-                "completeness": score.completeness,
-                "conciseness": score.conciseness,
-                "overall": score.overall,
-                "reasoning": score.reasoning,
-            })
+            answer_details.append(
+                {
+                    "query": sample.query,
+                    "gold_answer": sample.gold_answer,
+                    "generated_answer": generated_answer[:500],
+                    "chunks_found": chunks_found,
+                    "faithfulness": score.faithfulness,
+                    "relevance": score.relevance,
+                    "completeness": score.completeness,
+                    "conciseness": score.conciseness,
+                    "overall": score.overall,
+                    "reasoning": score.reasoning,
+                }
+            )
 
         except Exception as exc:
             logger.error("Answer eval failed for '%s': %s", sample.query, exc)
             metrics.errors += 1
-            answer_details.append({
-                "query": sample.query,
-                "error": str(exc),
-            })
+            answer_details.append(
+                {
+                    "query": sample.query,
+                    "error": str(exc),
+                }
+            )
 
     # Average the metrics
     n = metrics.total_evaluated - metrics.errors
@@ -266,7 +274,7 @@ async def run_evaluation(config: EvalConfig | None = None) -> EvalResult:
 
     start_time = time.monotonic()
     result = EvalResult(
-        timestamp=datetime.now(tz=timezone.utc).isoformat(),
+        timestamp=datetime.now(tz=UTC).isoformat(),
         config={
             "mode": config.mode,
             "judge": config.judge,
@@ -315,11 +323,13 @@ async def run_evaluation(config: EvalConfig | None = None) -> EvalResult:
         for i, retrieval_data in enumerate(per_sample_retrieval):
             merged = {**retrieval_data}
             if i < len(answer_details):
-                merged.update({
-                    f"answer_{k}": v
-                    for k, v in answer_details[i].items()
-                    if k not in ("query", "context")
-                })
+                merged.update(
+                    {
+                        f"answer_{k}": v
+                        for k, v in answer_details[i].items()
+                        if k not in ("query", "context")
+                    }
+                )
             result.per_sample_results.append(merged)
     else:
         result.per_sample_results = per_sample_retrieval
@@ -341,16 +351,18 @@ async def run_evaluation(config: EvalConfig | None = None) -> EvalResult:
     ]
 
     if config.mode == "end-to-end":
-        lines.extend([
-            "",
-            "Answer Quality Metrics:",
-            f"  Faithfulness: {answer_metrics.avg_faithfulness:.4f}",
-            f"  Relevance: {answer_metrics.avg_relevance:.4f}",
-            f"  Completeness: {answer_metrics.avg_completeness:.4f}",
-            f"  Conciseness: {answer_metrics.avg_conciseness:.4f}",
-            f"  Overall: {answer_metrics.avg_overall:.4f}",
-            f"  Errors: {answer_metrics.errors}",
-        ])
+        lines.extend(
+            [
+                "",
+                "Answer Quality Metrics:",
+                f"  Faithfulness: {answer_metrics.avg_faithfulness:.4f}",
+                f"  Relevance: {answer_metrics.avg_relevance:.4f}",
+                f"  Completeness: {answer_metrics.avg_completeness:.4f}",
+                f"  Conciseness: {answer_metrics.avg_conciseness:.4f}",
+                f"  Overall: {answer_metrics.avg_overall:.4f}",
+                f"  Errors: {answer_metrics.errors}",
+            ]
+        )
 
     result.summary = "\n".join(lines)
     logger.info("\n%s", result.summary)

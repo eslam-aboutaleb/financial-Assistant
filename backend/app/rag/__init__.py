@@ -44,4 +44,3 @@ __all__ = [
     "EvalResult",
     "run_evaluation",
 ]
-

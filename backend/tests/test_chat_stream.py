@@ -1,7 +1,5 @@
-import time
-
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -59,12 +57,17 @@ async def test_chat_stream_persists_conversation_on_llm_failure(
 
         response = test_client.post(
             "/api/v1/auth/signup",
-            json={"username": f"stream_fail_user_{uuid.uuid4().hex[:8]}", "password": "TestPass123!"},
+            json={
+                "username": f"stream_fail_user_{uuid.uuid4().hex[:8]}",
+                "password": "TestPass123!",
+            },
         )
         token = response.json()["access_token"]
 
         response2 = test_client.post(
-            "/api/v1/chat/stream", json={"message": "Hi"}, headers={"Authorization": f"Bearer {token}"}
+            "/api/v1/chat/stream",
+            json={"message": "Hi"},
+            headers={"Authorization": f"Bearer {token}"},
         )
         assert response2.status_code == 200
         assert "Streaming failed" in response2.text
@@ -85,12 +88,17 @@ async def test_chat_stream_emits_response_complete_on_error(test_client, mock_cu
 
         response = test_client.post(
             "/api/v1/auth/signup",
-            json={"username": f"stream_complete_user_{uuid.uuid4().hex[:8]}", "password": "TestPass123!"},
+            json={
+                "username": f"stream_complete_user_{uuid.uuid4().hex[:8]}",
+                "password": "TestPass123!",
+            },
         )
         token = response.json()["access_token"]
 
         response2 = test_client.post(
-            "/api/v1/chat/stream", json={"message": "Hi"}, headers={"Authorization": f"Bearer {token}"}
+            "/api/v1/chat/stream",
+            json={"message": "Hi"},
+            headers={"Authorization": f"Bearer {token}"},
         )
         assert response2.status_code == 200
         body = response2.text
@@ -108,9 +116,12 @@ async def test_chat_stream_creates_conversation_visible_in_sidebar(
         result.session_id = "session-sidebar"
         yield 'data: {"type": "text_delta", "content": {"parts": [{"text": "Hello"}]}}\n\n'
 
-    with patch("app.api.v1.chat_stream.run_agent_stream") as mock_run_agent_stream, patch(
-        "app.api.v1.chat_stream._persist_streamed_turn", new_callable=AsyncMock
-    ) as mock_persist:
+    with (
+        patch("app.api.v1.chat_stream.run_agent_stream") as mock_run_agent_stream,
+        patch(
+            "app.api.v1.chat_stream._persist_streamed_turn", new_callable=AsyncMock
+        ) as mock_persist,
+    ):
         mock_run_agent_stream.side_effect = mock_run
 
         response = test_client.post(
@@ -120,7 +131,9 @@ async def test_chat_stream_creates_conversation_visible_in_sidebar(
         token = response.json()["access_token"]
 
         response2 = test_client.post(
-            "/api/v1/chat/stream", json={"message": "Hi"}, headers={"Authorization": f"Bearer {token}"}
+            "/api/v1/chat/stream",
+            json={"message": "Hi"},
+            headers={"Authorization": f"Bearer {token}"},
         )
         assert response2.status_code == 200
         mock_persist.assert_awaited_once()

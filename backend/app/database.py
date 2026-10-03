@@ -15,9 +15,11 @@ Design decisions:
     issues during module initialization.
 """
 
+import os
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
@@ -26,9 +28,23 @@ DATABASE_URL = settings.database_url
 
 # The async engine is a process-wide singleton. ``echo=False`` suppresses
 # SQL logging; enable it temporarily when debugging query performance.
+#
+# ``OMNICARE_TEST_NULLPOOL`` selects ``NullPool``, which opens a fresh connection
+# for every checkout and closes it on return. The test suite runs each request on a
+# different event loop (the ``TestClient`` portal loop, then the fixture reset's own
+# ``asyncio.run`` loop). A pooling engine can hand a live connection to a loop other
+# than the one that created it, which asyncpg rejects with "got Future attached to a
+# different loop" and which surfaces as an intermittent 401 or a missing row rather
+# than as an obvious error. NullPool makes that impossible.
+#
+# Honoured only when ENVIRONMENT=test. NullPool is correct for tests and pathological
+# under load, so a stray value in a deployment environment must not select it.
+_NULL_POOL = os.environ.get("OMNICARE_TEST_NULLPOOL") == "1" and settings.environment == "test"
+
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
+    poolclass=NullPool if _NULL_POOL else None,
 )
 
 # Session factory bound to the engine. Each ``async_session_factory()`` call

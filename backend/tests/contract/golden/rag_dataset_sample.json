@@ -1,0 +1,10 @@
+{
+  "query": "Is water damage from a pipe burst covered?",
+  "expected_sections": [
+    "Section 1: Home Water Damage Coverage"
+  ],
+  "gold_answer": "Yes, water damage caused by sudden pipe bursts is covered up to $25,000 with a $500 deductible.",
+  "category": "coverage",
+  "difficulty": "easy",
+  "metadata": {}
+}

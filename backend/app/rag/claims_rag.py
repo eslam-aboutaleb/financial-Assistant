@@ -13,6 +13,7 @@ from typing import Any
 from app.config import get_settings
 from app.database import async_session_factory
 from app.rag.embedding import EmbeddingFactory
+from app.rag.embedding_dimensions import get_embedding_dimension
 from app.rag.pgvector_store import _validate_embedding
 from app.rag.vector_store import get_vector_store
 
@@ -100,7 +101,7 @@ async def ingest_claim(  # noqa: PLR0913, PLR0917
     text_content = f"Claim {claim_id}: {claim_type} - {description}"
     embedding = await embed_fn([text_content])
     embedding = embedding[0]
-    _validate_embedding(embedding, expected_dim=1536, label="claim embedding")
+    _validate_embedding(embedding, expected_dim=get_embedding_dimension(), label="claim embedding")
 
     store = get_vector_store(table_name="claims", id_field="id")
     await store.upsert(

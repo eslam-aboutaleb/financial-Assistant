@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "message": "frozen detail",
+    "details": null
+  }
+}

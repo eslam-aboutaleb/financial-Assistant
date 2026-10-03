@@ -1,7 +1,6 @@
 """Coverage tests for app.rag.answer_evaluator uncovered paths."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 
 class TestAnswerEvaluator:

@@ -1,10 +1,9 @@
 """Coverage tests for app.api.v1.chat_stream uncovered paths."""
+
 from __future__ import annotations
 
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 
 class TestChatStreamAPI:
@@ -91,10 +90,13 @@ class TestChatStreamAPI:
     def test_persist_streamed_turn_logs_error(self):
         from app.api.v1.chat_stream import _persist_streamed_turn
 
-        with patch("app.api.v1.chat_stream.save_conversation_turn", new_callable=AsyncMock) as mock_save:
+        with patch(
+            "app.api.v1.chat_stream.save_conversation_turn", new_callable=AsyncMock
+        ) as mock_save:
             mock_save.side_effect = Exception("DB error")
             with patch("app.api.v1.chat_stream.logger") as mock_logger:
                 import asyncio
+
                 asyncio.run(
                     _persist_streamed_turn(
                         user_id="00000000-0000-0000-0000-000000000001",

@@ -4,7 +4,9 @@ Loads environment variables from .env file with strict typing and sensible defau
 """
 
 import json
+import os
 import secrets
+import socket
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -57,6 +59,42 @@ class Settings(BaseSettings):
     embedding_model: str = Field(
         default="text-embedding-3-small",
         description="OpenAI embedding model name used by the embedding function",
+    )
+    embedding_drain_interval_seconds: float = Field(
+        default=5.0,
+        gt=0.1,
+        description=("Idle sleep of the embedding drainer between empty passes."),
+    )
+    embedding_drain_batch_size: int = Field(
+        default=10,
+        gt=0,
+        description="Number of embedding jobs the drainer claims per pass.",
+    )
+    job_stale_after_seconds: float = Field(
+        default=300.0,
+        gt=0,
+        description=(
+            "Seconds after which a job stuck in 'processing' is considered "
+            "abandoned by a dead worker and reclaimed to 'pending'."
+        ),
+    )
+    worker_id: str = Field(
+        default_factory=lambda: f"{socket.gethostname()}-{os.getpid()}",
+        description=(
+            "Identity this process stamps onto embedding jobs it claims. "
+            "Defaults to a per-process host-pid value so concurrent drainers "
+            "are distinguishable in locked_by."
+        ),
+    )
+    ingest_on_startup: bool = Field(
+        default=True,
+        description=(
+            "Whether to index the policy documents during application startup. "
+            "Defaults to True so a fresh deployment is immediately queryable. Set to "
+            "False to start the API against a database that is already indexed, "
+            "which avoids paying the ingestion cost on every boot and on every test "
+            "run."
+        ),
     )
 
     # RAG Configuration
@@ -142,12 +180,39 @@ class Settings(BaseSettings):
     @field_validator("jwt_secret_key")
     @classmethod
     def validate_jwt_secret_key(cls, value: str, info: Any) -> str:
-        """Reject the insecure default JWT secret in production environments."""
+        """Reject a placeholder or weak JWT secret in production.
+
+        This is an authentication-bypass gate, so it is deliberately stricter than a
+        single sentinel check. It rejects:
+
+        * every placeholder value shipped in ``.env.example``, so copying that file and
+          setting ``ENVIRONMENT=production`` cannot start the service with a publicly
+          known HMAC key;
+        * any secret shorter than 32 characters, which is too weak to sign tokens with.
+        """
         environment = info.data.get("environment", "development")
-        if environment == "production" and "change-me" in value:
+        if environment != "production":
+            return value
+
+        normalised = value.strip().lower()
+        placeholders = {
+            "change-me",
+            "your-secret-key-here",
+            "your_secret_key_here",
+            "changeme",
+            "secret",
+            "password",
+            "string",
+        }
+        if normalised in placeholders or "change-me" in normalised:
             raise ValueError(
-                "JWT_SECRET_KEY must be set to a secure random value in production. "
-                "The current value is the insecure development default."
+                "JWT_SECRET_KEY is still a placeholder. Generate one with "
+                '`python -c "import secrets; print(secrets.token_urlsafe(32))"` '
+                "before deploying to production."
+            )
+        if len(value) < 32:
+            raise ValueError(
+                f"JWT_SECRET_KEY must be at least 32 characters in production; got {len(value)}."
             )
         return value
 

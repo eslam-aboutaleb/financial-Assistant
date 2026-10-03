@@ -1,8 +1,9 @@
 """Coverage tests for app.rag.embedding_jobs uncovered paths."""
+
 from __future__ import annotations
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

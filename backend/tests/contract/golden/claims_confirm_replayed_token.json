@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "BAD_REQUEST",
+    "message": "Invalid, expired, or already used confirmation token.",
+    "details": null
+  }
+}

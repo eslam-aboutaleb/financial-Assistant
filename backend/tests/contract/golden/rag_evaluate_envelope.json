@@ -1,0 +1,41 @@
+{
+  "top_level_keys": [
+    "timestamp",
+    "config",
+    "retrieval_metrics",
+    "answer_metrics",
+    "per_sample_results",
+    "summary",
+    "duration_seconds"
+  ],
+  "config": {
+    "mode": "retrieval-only",
+    "judge": "heuristic",
+    "n_results": 5,
+    "category": null,
+    "difficulty": null
+  },
+  "retrieval_metric_keys": [
+    "avg_latency_ms",
+    "errors",
+    "mrr",
+    "precision_at_k",
+    "recall_at_k",
+    "total_queries"
+  ],
+  "answer_metric_keys": [],
+  "summary_keys": null,
+  "per_sample_item_keys": [
+    "category",
+    "chunks_found",
+    "context",
+    "difficulty",
+    "expected_sections",
+    "latency_ms",
+    "mrr",
+    "precision",
+    "query",
+    "recall",
+    "retrieved_sections"
+  ]
+}

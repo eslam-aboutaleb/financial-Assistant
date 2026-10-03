@@ -1,11 +1,10 @@
 """Coverage tests for app.api.v1.chat uncovered paths."""
+
 from __future__ import annotations
 
-import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import litellm
-import pytest
 
 
 class TestChatAPI:
@@ -41,9 +40,7 @@ class TestChatAPI:
 
     def test_chat_reset_endpoint(self, test_client, mock_current_user):
         with patch("app.api.v1.chat.reset_user_session", new_callable=AsyncMock):
-            response = test_client.post(
-                "/api/v1/chat/reset", headers=mock_current_user
-            )
+            response = test_client.post("/api/v1/chat/reset", headers=mock_current_user)
             assert response.status_code == 204
 
     def test_chat_exception_logs_and_returns_500(self, test_client, mock_current_user):

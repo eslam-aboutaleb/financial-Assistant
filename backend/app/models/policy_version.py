@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import DateTime, ForeignKey, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,18 +49,14 @@ class PolicyVersion(Base):
         nullable=False,
     )
     version: Mapped[str] = mapped_column(Text, nullable=False)
-    effective_from: Mapped[DateTime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    effective_to: Mapped[DateTime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    effective_from: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_to: Mapped[DateTime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     source_hash: Mapped[str] = mapped_column(Text, nullable=False)
     embedding_model: Mapped[str | None] = mapped_column(Text, nullable=True)
-    embedding_dim: Mapped[int | None] = mapped_column(Text, nullable=True)
+    embedding_dim: Mapped[int | None] = mapped_column(Integer, nullable=True)
     chunker_version: Mapped[str | None] = mapped_column(Text, nullable=True)
-    chunk_size: Mapped[int | None] = mapped_column(Text, nullable=True)
-    overlap: Mapped[int | None] = mapped_column(Text, nullable=True)
+    chunk_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    overlap: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retrieval_schema_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default="now()", nullable=False

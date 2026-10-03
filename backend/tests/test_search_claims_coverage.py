@@ -1,4 +1,5 @@
 """Coverage tests for app.agent.tools.search_claims uncovered paths."""
+
 from __future__ import annotations
 
 from unittest.mock import patch

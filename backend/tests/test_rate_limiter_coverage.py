@@ -1,10 +1,9 @@
 """Coverage tests for app.rate_limiter uncovered paths."""
+
 from __future__ import annotations
 
 import uuid
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestRateLimiter:
@@ -14,7 +13,9 @@ class TestRateLimiter:
         request = MagicMock()
         request.headers.get.return_value = None
         request.cookies.get.return_value = "valid-jwt-token"
-        with patch("app.auth._decode_token", return_value=uuid.UUID("00000000-0000-0000-0000-000000000001")):
+        with patch(
+            "app.auth._decode_token", return_value=uuid.UUID("00000000-0000-0000-0000-000000000001")
+        ):
             key = _user_or_ip_key_func(request)
         assert key == "user:00000000-0000-0000-0000-000000000001"
 

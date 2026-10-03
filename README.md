@@ -2,6 +2,8 @@
 
 A full-stack AI-powered customer assistant for **OmniCare Financial**, an enterprise insurance company. Policyholders can authenticate, ask policy coverage questions (with citations), look up claim statuses, and submit new claims - all through a modern chat interface.
 
+> **Note:** OmniCare Financial is a fictional company. This repository is an engineering showcase that ships with synthetic sample policy and claim data (`backend/app/data/`) generated for demonstration purposes; it is not affiliated with, endorsed by, or derived from any real insurance company or client engagement.
+
 Powered by **Google Agent Development Kit (ADK)** and **LiteLLM**, the assistant autonomously resolves policy coverage inquiries using local **pgvector** vector retrieval (RAG), checks live claim status records, and facilitates new claim submissions with full schema validation and audit trails.
 
 ---

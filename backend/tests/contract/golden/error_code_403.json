@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "frozen detail",
+    "details": null
+  }
+}

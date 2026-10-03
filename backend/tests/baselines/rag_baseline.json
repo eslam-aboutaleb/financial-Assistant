@@ -1,0 +1,64 @@
+{
+  "mrr": 0.8181818181818182,
+  "p50_latency_ms": 35.46500000084052,
+  "per_query": {
+    "ambiguous-covered": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "reciprocal_rank": 1.0
+    },
+    "conflicting-exclusion": {
+      "precision": 0.5,
+      "recall": 1.0,
+      "reciprocal_rank": 1.0
+    },
+    "exact-keyword-appraisal": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "reciprocal_rank": 1.0
+    },
+    "exact-keyword-gradual-leaks": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "reciprocal_rank": 1.0
+    },
+    "exact-keyword-preamble": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "reciprocal_rank": 1.0
+    },
+    "exact-keyword-water-damage": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "reciprocal_rank": 1.0
+    },
+    "followup-deductible": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "reciprocal_rank": 1.0
+    },
+    "no-result": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "reciprocal_rank": 0.0
+    },
+    "out-of-scope": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "reciprocal_rank": 0.0
+    },
+    "semantic-stemming": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "reciprocal_rank": 1.0
+    },
+    "synonym-vector-only": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "reciprocal_rank": 1.0
+    }
+  },
+  "precision_at_5": 0.9545454545454546,
+  "query_count": 11,
+  "recall_at_5": 1.0
+}

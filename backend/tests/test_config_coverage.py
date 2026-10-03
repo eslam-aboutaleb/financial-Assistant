@@ -1,4 +1,5 @@
 """Coverage tests for app.config uncovered paths."""
+
 from __future__ import annotations
 
 import pytest

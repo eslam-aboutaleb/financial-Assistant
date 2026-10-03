@@ -107,7 +107,10 @@ async def test_submit_claim_internal_accepts_explicit_session():
 
     with (
         patch("app.agent.tools.submit_claim.Claim", return_value=new_claim),
-        patch("app.agent.tools.submit_claim.uuid.uuid4", return_value=uuid.UUID("00000000-0000-0000-0000-000000000004")),
+        patch(
+            "app.agent.tools.submit_claim.uuid.uuid4",
+            return_value=uuid.UUID("00000000-0000-0000-0000-000000000004"),
+        ),
     ):
         result = await submit_claim_internal(
             policy_number="POL-1092",
@@ -120,7 +123,51 @@ async def test_submit_claim_internal_accepts_explicit_session():
 
     assert result.get("success") is True
     assert result["confirmation_id"] == "CLM-00000000"
-    mock_session.commit.assert_called_once()
+    # The tool must not commit a caller-owned session: doing so releases the
+    # SELECT ... FOR UPDATE row lock that confirm_claim_submission holds on the
+    # pending submission, which allowed a second concurrent confirmation to insert a
+    # duplicate claim for the same token. It flushes so the caller can still commit
+    # the claim, the job, and the status change together.
+    mock_session.commit.assert_not_called()
+    mock_session.flush.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submit_claim_internal_commits_when_it_owns_the_session():
+    """With no caller session the tool owns the transaction and must commit it."""
+    new_claim = MagicMock()
+    new_claim.id = uuid.uuid4()
+    new_claim.claim_id = "CLM-OWNED"
+    new_claim.owner_id = uuid.UUID("00000000-0000-0000-0000-000000000003")
+    new_claim.claim_type = "Water Damage"
+    new_claim.description = "Pipe burst"
+    new_claim.policy_number = "POL-1092"
+    new_claim.status = "Submitted"
+    new_claim.amount = 1500.0
+
+    owned_session = AsyncMock()
+    owned_session.add = MagicMock()
+
+    with (
+        patch("app.agent.tools.submit_claim.Claim", return_value=new_claim),
+        patch(
+            "app.agent.tools.submit_claim.uuid.uuid4",
+            return_value=uuid.UUID("00000000-0000-0000-0000-000000000005"),
+        ),
+        patch("app.agent.tools.submit_claim.async_session_factory") as mock_factory,
+    ):
+        mock_factory.return_value.__aenter__.return_value = owned_session
+        mock_factory.return_value.__aexit__.return_value = False
+        result = await submit_claim_internal(
+            policy_number="POL-1092",
+            claim_type="Water Damage",
+            amount=1500.0,
+            description="Pipe burst",
+            user_uuid=uuid.UUID("00000000-0000-0000-0000-000000000003"),
+        )
+
+    assert result.get("success") is True
+    owned_session.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio

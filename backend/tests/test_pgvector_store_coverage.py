@@ -1,8 +1,8 @@
 """Coverage tests for app.rag.pgvector_store uncovered paths."""
+
 from __future__ import annotations
 
 import asyncio
-import math
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -82,9 +82,7 @@ class TestPgVectorStore:
         store = PgVectorStore(table_name="policy_chunks", id_field="id", embedding_dim=1536)
         mock_session = AsyncMock()
         await store.upsert(
-            documents=[
-                {"id": "1", "text": "test", "embedding": [0.0] * 1536}
-            ],
+            documents=[{"id": "1", "text": "test", "embedding": [0.0] * 1536}],
             session=mock_session,
         )
         mock_session.execute.assert_called_once()
@@ -98,9 +96,7 @@ class TestPgVectorStore:
             mock_factory.return_value.__aenter__.side_effect = Exception("DB down")
             with pytest.raises(Exception, match="DB down"):
                 await store.upsert(
-                    documents=[
-                        {"id": "1", "text": "test", "embedding": [0.0] * 1536}
-                    ]
+                    documents=[{"id": "1", "text": "test", "embedding": [0.0] * 1536}]
                 )
 
     def test_upsert_metadata_key_validation_in_loop(self):

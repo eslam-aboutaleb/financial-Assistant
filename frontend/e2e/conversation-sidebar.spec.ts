@@ -65,9 +65,8 @@ test("old conversations stay listed in the sidebar and open at /chat/:id", async
   page,
   request,
 }) => {
-  const { username, conversations } = await seedUserWithTwoConversations(
-    request,
-  );
+  const { username, conversations } =
+    await seedUserWithTwoConversations(request);
   const [newest, oldest] = conversations;
 
   await signIn(page, username);
@@ -110,9 +109,8 @@ test("New Chat clears the view but keeps old conversations in the sidebar", asyn
   page,
   request,
 }) => {
-  const { username, conversations } = await seedUserWithTwoConversations(
-    request,
-  );
+  const { username, conversations } =
+    await seedUserWithTwoConversations(request);
 
   await signIn(page, username);
 

@@ -61,6 +61,7 @@ ignore = [
     "SIM105",
     "S110",
     "S105",
+    "S108",
     "SIM117",
 ]
 "app/agent/prompts.py" = [

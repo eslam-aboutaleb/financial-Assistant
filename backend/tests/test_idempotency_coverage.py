@@ -1,7 +1,7 @@
 """Coverage tests for app.idempotency uncovered paths."""
+
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,7 +9,7 @@ import pytest
 
 class TestIdempotency:
     def test_idempotent_endpoint_body_mismatch_returns_409(self, test_client, mock_current_user):
-        from app.idempotency import _cache, clear_cache, store_response
+        from app.idempotency import clear_cache, store_response
 
         clear_cache()
         key = "00000000-0000-0000-0000-000000000001:test-key-bm"
@@ -43,24 +43,80 @@ class TestIdempotency:
         finally:
             app.state.limiter.enabled = True
 
-    def test_idempotency_else_branch_direct(self):
-        from app.idempotency import idempotent_endpoint
+    @pytest.mark.asyncio
+    async def test_idempotency_else_branch_direct(self):
+        from app.idempotency import clear_cache, idempotent_endpoint
 
+        clear_cache()
         call_count = 0
 
         @idempotent_endpoint()
-        async def mock_endpoint(payload=None, response=None, current_user_id=None, idempotency_key=None):
+        async def mock_endpoint(
+            payload=None, response=None, current_user_id=None, idempotency_key=None
+        ):
             nonlocal call_count
             call_count += 1
             return {"result": "ok"}
 
-        result = asyncio.run(mock_endpoint(payload=None, response=None, current_user_id=None))
+        result = await mock_endpoint(payload=None, response=None, current_user_id=None)
         assert result == {"result": "ok"}
         assert call_count == 1
 
-    def test_idempotency_store_response_dict_without_model_dump(self):
-        from app.idempotency import idempotent_endpoint
+    @pytest.mark.asyncio
+    async def test_idempotency_store_response_dict_without_model_dump(self):
+        from app.idempotency import clear_cache, idempotent_endpoint
 
+        clear_cache()
+        call_count = 0
         mock_response = MagicMock()
-        mock_payload = MagicMock()
-        mock_payload.model_dump.return_value = {"message": "test"}
+        mock_response.headers = {}
+
+        @idempotent_endpoint()
+        async def mock_endpoint(
+            payload=None, response=None, current_user_id=None, idempotency_key=None
+        ):
+            nonlocal call_count
+            call_count += 1
+            return {"result": "ok"}
+
+        payload = {"message": "test"}
+        result = await mock_endpoint(
+            payload=payload,
+            response=mock_response,
+            current_user_id="user-1",
+            idempotency_key="key-1",
+        )
+        assert result == {"result": "ok"}
+        assert call_count == 1
+        assert mock_response.headers["X-Idempotency-Key"] == "key-1"
+
+    @pytest.mark.asyncio
+    async def test_idempotency_store_response_model_with_model_dump(self):
+        from app.idempotency import clear_cache, idempotent_endpoint
+
+        clear_cache()
+        call_count = 0
+        mock_response = MagicMock()
+        mock_response.headers = {}
+
+        class MockModel:
+            def model_dump(self):
+                return {"result": "ok"}
+
+        @idempotent_endpoint()
+        async def mock_endpoint(
+            payload=None, response=None, current_user_id=None, idempotency_key=None
+        ):
+            nonlocal call_count
+            call_count += 1
+            return MockModel()
+
+        payload = {"message": "test"}
+        await mock_endpoint(
+            payload=payload,
+            response=mock_response,
+            current_user_id="user-1",
+            idempotency_key="key-2",
+        )
+        assert call_count == 1
+        assert mock_response.headers["X-Idempotency-Key"] == "key-2"

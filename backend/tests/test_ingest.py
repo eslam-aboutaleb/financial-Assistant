@@ -19,6 +19,7 @@ def _make_session():
     session.execute.return_value = MagicMock()
     session.commit = AsyncMock()
     session.flush = AsyncMock()
+    session.rollback = AsyncMock()
     session.add = MagicMock()
     return session
 
@@ -134,7 +135,9 @@ async def test_ingest_policy_releases_lock_on_failure():
 
     with (
         patch("app.rag.ingest.async_session_factory") as mock_factory,
-        patch("app.rag.ingest._do_ingest", new_callable=AsyncMock, side_effect=RuntimeError("boom")),
+        patch(
+            "app.rag.ingest._do_ingest", new_callable=AsyncMock, side_effect=RuntimeError("boom")
+        ),
         patch("builtins.open", MagicMock()),
         patch("app.rag.ingest.hashlib") as mock_hashlib,
     ):
@@ -175,8 +178,9 @@ async def test_do_ingest_reingests_when_chunker_version_changes():
     result2 = MagicMock()
     result2.scalar_one_or_none.return_value = active_version
     result3 = MagicMock()
+    result4 = MagicMock()
 
-    session.execute.side_effect = [result1, result2, result3]
+    session.execute.side_effect = [result1, result2, result3, result4]
 
     with (
         patch("app.rag.ingest.chunk_policy_document") as mock_chunk,
@@ -261,8 +265,9 @@ async def test_do_ingest_reingests_when_embedding_model_changes():
     result2 = MagicMock()
     result2.scalar_one_or_none.return_value = active_version
     result3 = MagicMock()
+    result4 = MagicMock()
 
-    session.execute.side_effect = [result1, result2, result3]
+    session.execute.side_effect = [result1, result2, result3, result4]
 
     with (
         patch("app.rag.ingest.chunk_policy_document") as mock_chunk,

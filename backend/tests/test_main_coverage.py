@@ -1,4 +1,5 @@
 """Coverage tests for app.main uncovered paths."""
+
 from __future__ import annotations
 
 import asyncio

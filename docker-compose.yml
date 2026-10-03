@@ -36,9 +36,15 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: omnicare
     ports:
-      # Expose PostgreSQL port for external tools (pgAdmin, DBeaver, etc.).
-      # Remove this in production or restrict to localhost for security.
-      - "5432:5432"
+      # Published on a configurable host port, and bound to loopback only. The default is
+      # 15432 rather than 5432 because a locally installed PostgreSQL -- or another
+      # project's database container -- commonly occupies 5432, which makes Docker fail
+      # with "Bind for 0.0.0.0:5432 failed: port is already allocated".
+      # Binding to 127.0.0.1 keeps the database off every external interface; publishing
+      # it on 0.0.0.0 would expose it to the whole local network.
+      # The container always listens on 5432 internally, so services on the compose
+      # network keep using db:5432 regardless of this value.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-15432}:5432"
     volumes:
       # Persist database data across container restarts and recreations.
       - pg_data:/var/lib/postgresql/data
@@ -79,6 +85,32 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  # ============================================================================
+  # Embedding Drain Worker
+  # ============================================================================
+  # Drains the `embedding_jobs` outbox: claims pending jobs, generates the
+  # embedding, and upserts it into pgvector. Runs as its own process so embedding
+  # latency and API failures never block a claim submission. Uses FOR UPDATE
+  # SKIP LOCKED, so additional replicas scale without coordination.
+  embedding-drain:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: omnicare-embedding-drain
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.embedding_drain"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-omnicare}:${POSTGRES_PASSWORD}@db:5432/omnicare
+      EMBEDDING_DRAIN_INTERVAL_SECONDS: ${EMBEDDING_DRAIN_INTERVAL_SECONDS:-5}
+      EMBEDDING_DRAIN_BATCH_SIZE: ${EMBEDDING_DRAIN_BATCH_SIZE:-10}
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
 
   # ============================================================================
   # Frontend Service

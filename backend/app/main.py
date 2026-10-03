@@ -11,7 +11,10 @@ import subprocess
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -106,12 +109,18 @@ async def lifespan(app: FastAPI):
         logger.warning(f"LiteLLM configuration skipped: {e}")
 
     # Ingest policy documents into vector store on startup
-    try:
-        count = await ingest_policy()
-        logger.info(f"Policy ingestion complete: {count} chunks indexed")
-    except Exception as e:
-        logger.error(f"Policy ingestion failed: {e}")
-        # Server continues running so claim status/submission endpoints remain available
+    if settings.ingest_on_startup:
+        try:
+            count = await ingest_policy()
+            logger.info(f"Policy ingestion complete: {count} chunks indexed")
+        except Exception as e:
+            logger.error(f"Policy ingestion failed: {e}")
+            # Server continues running so claim status/submission endpoints remain available
+    else:
+        logger.info(
+            "Startup ingestion disabled (INGEST_ON_STARTUP=false); "
+            "serving the policy index already present in the database."
+        )
 
     yield  # Server is running and receiving traffic
 
@@ -137,6 +146,57 @@ app = FastAPI(
 )
 
 
+# Types that may appear in a Pydantic error ``ctx`` and are safe to pass through.
+# Anything else is rendered with ``repr`` so an unexpected object cannot expand into a
+# response body that dumps its attributes.
+_JSON_SAFE_ERROR_TYPES = (str, int, float, bool, type(None))
+_JSON_CONVERTED_ERROR_TYPES = (Decimal, UUID, datetime, date)
+
+
+def _jsonify_validation_value(value: Any) -> Any:  # noqa: PLR0911
+    """Convert one value from ``exc.errors()`` into a JSON-serialisable primitive.
+
+    Each branch maps one input shape to its JSON form. The table is explicit so an
+    unexpected type degrades to ``repr`` rather than being expanded attribute by
+    attribute, which is what ``jsonable_encoder`` would do.
+    """
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, _JSON_SAFE_ERROR_TYPES):
+        return value
+    if isinstance(value, Decimal):
+        # Keep integral values as int so the wire format is unchanged for whole-number
+        # constraints (0 stays 0, not 0.0); fractional constraints become float.
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, (UUID, datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _jsonify_validation_value(item) for key, item in value.items()}
+    return (
+        [_jsonify_validation_value(item) for item in value]
+        if isinstance(value, (list, tuple, set))
+        else repr(value)
+    )
+
+
+def _sanitize_error_detail(value: Any) -> Any:
+    """Coerce a Pydantic error payload into JSON-serialisable primitives.
+
+    ``exc.errors()`` carries raw constraint values inside ``ctx``, and those are not
+    limited to JSON types: a ``gt`` constraint on a ``Decimal`` field puts
+    ``Decimal("0")`` in ``ctx``, and a UUID constraint puts a ``UUID``. Embedding them
+    verbatim makes ``JSONResponse`` raise ``TypeError``, which turns a validation failure
+    into an opaque 500.
+
+    This uses an explicit conversion table rather than ``jsonable_encoder`` on purpose.
+    The encoder expands unknown objects through ``dict()`` then ``vars()``, so a custom
+    validator's exception would be serialised attribute by attribute into the response
+    body, and it still raises when neither succeeds -- reintroducing the very failure
+    this exists to prevent.
+    """
+    return _jsonify_validation_value(value)
+
+
 @app.exception_handler(RequestValidationError)
 async def request_validation_exception_handler(
     request: Request,
@@ -153,17 +213,8 @@ async def request_validation_exception_handler(
         "Validation error on %s %s: %s",
         request.method,
         request.url.path,
-        exc.errors(),
+        _sanitize_error_detail(exc.errors()),
     )
-
-    def _sanitize_error_detail(value: Any) -> Any:
-        if isinstance(value, bytes):
-            return value.decode("utf-8", errors="replace")
-        if isinstance(value, dict):
-            return {k: _sanitize_error_detail(v) for k, v in value.items()}
-        if isinstance(value, list):
-            return [_sanitize_error_detail(v) for v in value]
-        return value
 
     error = ErrorDetail(
         code="VALIDATION_ERROR",

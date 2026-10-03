@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Message cannot be empty",
+    "details": null
+  }
+}

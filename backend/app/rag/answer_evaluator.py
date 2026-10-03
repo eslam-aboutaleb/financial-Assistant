@@ -90,8 +90,16 @@ def _key_fact_recall(answer: str, gold_answer: str) -> float:
 
     # Also extract key domain terms
     domain_terms = {
-        "covered", "excluded", "deductible", "limit", "appraisal",
-        "pipe burst", "flood", "gradual", "electronics", "furniture",
+        "covered",
+        "excluded",
+        "deductible",
+        "limit",
+        "appraisal",
+        "pipe burst",
+        "flood",
+        "gradual",
+        "electronics",
+        "furniture",
         "jewelry",
     }
     gold_lower = gold_answer.lower()
@@ -104,10 +112,7 @@ def _key_fact_recall(answer: str, gold_answer: str) -> float:
     if not key_facts:
         return _token_overlap(answer, gold_answer)
 
-    hits = sum(
-        1 for fact in key_facts
-        if fact.lower() in answer_lower or fact in answer
-    )
+    hits = sum(1 for fact in key_facts if fact.lower() in answer_lower or fact in answer)
     return hits / len(key_facts)
 
 
@@ -154,12 +159,7 @@ def evaluate_answer_heuristic(
     else:
         conciseness = 0.2
 
-    overall = (
-        0.30 * faithfulness
-        + 0.25 * relevance
-        + 0.30 * completeness
-        + 0.15 * conciseness
-    )
+    overall = 0.30 * faithfulness + 0.25 * relevance + 0.30 * completeness + 0.15 * conciseness
 
     return AnswerScore(
         faithfulness=round(faithfulness, 4),
@@ -274,12 +274,7 @@ async def evaluate_answer_llm(
         conciseness = float(scores.get("conciseness", 0))
         reasoning = scores.get("reasoning", "")
 
-        overall = (
-            0.30 * faithfulness
-            + 0.25 * relevance
-            + 0.30 * completeness
-            + 0.15 * conciseness
-        )
+        overall = 0.30 * faithfulness + 0.25 * relevance + 0.30 * completeness + 0.15 * conciseness
 
         return AnswerScore(
             faithfulness=round(faithfulness, 4),

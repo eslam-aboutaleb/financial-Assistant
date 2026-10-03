@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "BAD_REQUEST",
+    "message": "Invalid conversation ID",
+    "details": null
+  }
+}

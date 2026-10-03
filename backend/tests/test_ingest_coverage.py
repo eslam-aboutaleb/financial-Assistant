@@ -1,4 +1,5 @@
 """Coverage tests for app.rag.ingest uncovered paths."""
+
 from __future__ import annotations
 
 import os
@@ -66,6 +67,7 @@ class TestIngest:
             try:
                 ingest_module.__name__ = "__main__"
                 import asyncio
+
                 asyncio.run(ingest_module.ingest_policy())
             finally:
                 ingest_module.__name__ = original_name

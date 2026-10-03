@@ -36,9 +36,7 @@ class Policy(Base):
     )
     product: Mapped[str] = mapped_column(Text, nullable=False)
     jurisdiction: Mapped[str] = mapped_column(Text, nullable=False)
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="true"
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default="now()", nullable=False
     )

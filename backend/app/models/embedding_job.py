@@ -31,6 +31,8 @@ class EmbeddingJob(Base):
         retry_count: Number of times this job has been retried.
         next_retry_at: Timestamp when the job is eligible for retry after failure.
         max_attempts: Maximum number of processing attempts before dead-lettering.
+        locked_at: Timestamp when a worker claimed the job for processing.
+        locked_by: Identity of the worker that claimed the job.
         created_at: Timestamp of job creation.
         completed_at: Timestamp of job completion (if applicable).
     """
@@ -52,6 +54,8 @@ class EmbeddingJob(Base):
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=4)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_by: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )

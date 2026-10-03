@@ -121,7 +121,7 @@ async def prepare_claim_submission(
     }
 
 
-async def submit_claim_internal(
+async def submit_claim_internal(  # noqa: PLR0913, PLR0917
     policy_number: str,
     claim_type: str,
     amount: float,
@@ -144,6 +144,13 @@ async def submit_claim_internal(
         session: Optional existing database session. When provided, the claim
             and embedding job are written to the same transaction and the
             caller is responsible for committing.
+
+            This function never commits a caller-supplied session. Committing here
+            would release the ``SELECT ... FOR UPDATE`` row lock that
+            ``confirm_claim_submission`` holds on the pending submission, letting a
+            second concurrent confirmation read the same row as ``pending`` and insert
+            a duplicate claim. It only flushes, so the caller can still mark the
+            submission ``completed`` and commit both writes atomically.
 
     Returns:
         dict: Submission confirmation or error payload.
@@ -189,7 +196,7 @@ async def submit_claim_internal(
             status_detail="pending",
         )
         session.add(job)
-        await session.commit()
+        await session.flush()
 
         logger.info(
             "Claim '%s' submitted for policy '%s'.",
@@ -217,8 +224,10 @@ async def submit_claim_internal(
 
     try:
         if session is None:
-            async with async_session_factory() as session:
-                return await _submit(session)
+            async with async_session_factory() as owned_session:
+                result = await _submit(owned_session)
+                await owned_session.commit()
+                return result
         else:
             return await _submit(session)
     except Exception as exc:

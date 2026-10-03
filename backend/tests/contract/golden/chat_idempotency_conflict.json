@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Idempotency key reused with a different request body.",
+    "details": null
+  }
+}

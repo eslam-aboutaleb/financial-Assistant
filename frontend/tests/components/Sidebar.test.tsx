@@ -133,17 +133,19 @@ describe("Sidebar conversation history", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Old convo about water damage")).toBeInTheDocument();
+      expect(
+        screen.getByText("Old convo about water damage"),
+      ).toBeInTheDocument();
     });
-    expect(screen.getByText("Old convo about filing a claim")).toBeInTheDocument();
+    expect(
+      screen.getByText("Old convo about filing a claim"),
+    ).toBeInTheDocument();
   });
 
   it("calls onSelectChat with the clicked conversation id", async () => {
     const { onSelectChat } = renderSidebar();
 
-    fireEvent.click(
-      await screen.findByText("Old convo about filing a claim"),
-    );
+    fireEvent.click(await screen.findByText("Old convo about filing a claim"));
 
     expect(onSelectChat).toHaveBeenCalledTimes(1);
     expect(onSelectChat).toHaveBeenCalledWith(

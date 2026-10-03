@@ -22,6 +22,10 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
 import { useAuth } from "@/context/AuthContext";
 
+/** Used when a stored message carries no timestamp. Module scope so it is a
+ * single stable value rather than a new Date on every render. */
+const FALLBACK_TIMESTAMP = new Date(0);
+
 export function useChatMessages({
   onNewChat,
   historyId,
@@ -45,57 +49,91 @@ export function useChatMessages({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [historyLoadError, setHistoryLoadError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const idempotencyKeyRef = useRef<string>("");
   const lastSentIdempotencyKeyRef = useRef<string | null>(null);
 
   // Load conversation history when viewing an archived chat.
-  const { data: historyData, isLoading: isLoadingHistory, error: historyError } = useQuery({
+  const {
+    data: historyData,
+    isLoading: isLoadingHistory,
+    error: historyError,
+  } = useQuery({
     queryKey: ["conversation", historyId],
     queryFn: () => getConversationHistory(token!, historyId!),
     enabled: !!historyId && !!token,
   });
 
-   useEffect(() => {
-      if (historyData?.messages && historyId) {
-        setMessages(
-          historyData.messages.map(
-            (m: {
+  // Derived rather than stored: the error state is exactly what the query reports, so
+  // keeping a copy in state only risks the two disagreeing.
+  const historyLoadError: string | null = historyError
+    ? historyError instanceof Error
+      ? historyError.message
+      : "Failed to load conversation history"
+    : null;
+
+  // Switching conversations replaces the message list. Adjusting state during render
+  // is React's documented alternative to a setState-in-effect, and it avoids the extra
+  // paint where the previous conversation is still on screen.
+  const [renderedHistoryId, setRenderedHistoryId] = useState<
+    string | null | undefined
+  >(historyId);
+  if (renderedHistoryId !== historyId) {
+    setRenderedHistoryId(historyId);
+    setMessages([]);
+  }
+
+  // Same pattern for incoming history: reconcile when the query returns new data for
+  // the conversation currently being viewed.
+  const [loadedHistory, setLoadedHistory] =
+    useState<typeof historyData>(undefined);
+  if (historyData && historyData !== loadedHistory) {
+    setLoadedHistory(historyData);
+    if (historyId) {
+      setMessages(
+        historyData.messages.map(
+          (
+            m: {
               id?: string;
               role: Message["role"];
               content: string;
               timestamp?: string;
               sources?: string[];
               tool_calls?: Message["toolCalls"];
-            }) => ({
-              id: m.id || Date.now().toString(),
-              role: m.role,
-              content: m.content,
-              timestamp: new Date(m.timestamp || Date.now()),
-              sources: m.sources,
-              toolCalls: m.tool_calls,
-            }),
-          ) satisfies Message[],
-        );
-        setHistoryLoadError(null);
-        onHistoryLoaded?.();
-      }
-    }, [historyData, historyId, onHistoryLoaded]);
+            },
+            index: number,
+          ) => ({
+            // Deterministic fallbacks. Deriving these from Date.now() made the id
+            // change on every re-render, which churns React keys and can duplicate
+            // DOM nodes; index is stable for a given loaded conversation.
+            id: m.id ?? `${historyId}-${index}`,
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp ? new Date(m.timestamp) : FALLBACK_TIMESTAMP,
+            sources: m.sources,
+            toolCalls: m.tool_calls,
+          }),
+        ) satisfies Message[],
+      );
+    }
+  }
 
-   useEffect(() => {
-     if (!historyId) {
-       setMessages([]);
-     }
-   }, [historyId]);
+  // Notifies the page that a finished load happened. Notifying the parent is a side
+  // effect, so it stays in an effect; a ref records what was already announced so the
+  // callback fires once per result instead of on every render.
+  const notifiedHistoryRef = useRef<typeof historyData>(undefined);
+  useEffect(() => {
+    if (historyData && historyData !== notifiedHistoryRef.current) {
+      notifiedHistoryRef.current = historyData;
+      onHistoryLoaded?.();
+    }
+  }, [historyData, onHistoryLoaded]);
 
-   useEffect(() => {
-     if (historyError) {
-       const message = historyError instanceof Error ? historyError.message : "Failed to load conversation history";
-       setHistoryLoadError(message);
-       onHistoryLoadError?.(message);
-     }
-   }, [historyError, onHistoryLoadError]);
+  useEffect(() => {
+    if (historyError) {
+      onHistoryLoadError?.(historyLoadError!);
+    }
+  }, [historyError, historyLoadError, onHistoryLoadError]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior });

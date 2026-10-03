@@ -149,10 +149,8 @@ async def chat_stream(
             # even when the LLM stream fails. This guarantees the frontend
             # receives a terminal event and the conversation appears in the
             # sidebar regardless of downstream errors.
-            yield (
-                f"data: "
-                f'{{"type": "response_complete", "sources": {json.dumps(stream_result.sources)}}}\n\n'
-            )
+            sources_payload = json.dumps(stream_result.sources)
+            yield (f'data: {{"type": "response_complete", "sources": {sources_payload}}}\n\n')
 
             if stream_result.session_id:
                 asyncio.create_task(

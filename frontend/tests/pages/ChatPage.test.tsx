@@ -1,6 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
+import {
+  render,
+  screen,
+  waitFor,
+  fireEvent,
+  act,
+} from "@testing-library/react";
+import {
+  MemoryRouter,
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/context/AuthContext";
 import ChatPage from "@/pages/ChatPage";
@@ -20,7 +32,10 @@ const CONVERSATIONS = [
   },
 ];
 
-const MESSAGES: Record<string, { id: string; role: string; content: string; timestamp: string }[]> = {
+const MESSAGES: Record<
+  string,
+  { id: string; role: string; content: string; timestamp: string }[]
+> = {
   "aaaaaaaa-1111-1111-1111-111111111111": [
     {
       id: "m1",
@@ -105,7 +120,11 @@ function LocationProbe() {
 }
 
 /** Renders ChatPage and lets a test drive navigation the way a browser would. */
-function NavigationBridge({ onReady }: { onReady: (navigate: (to: string) => void) => void }) {
+function NavigationBridge({
+  onReady,
+}: {
+  onReady: (navigate: (to: string) => void) => void;
+}) {
   const navigate = useNavigate();
   onReady(navigate);
   return null;
@@ -151,8 +170,12 @@ describe("ChatPage conversation sidebar navigation", () => {
         CONVERSATIONS.length,
       );
     });
-    expect(screen.getByText("Old convo about water damage")).toBeInTheDocument();
-    expect(screen.getByText("Old convo about filing a claim")).toBeInTheDocument();
+    expect(
+      screen.getByText("Old convo about water damage"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Old convo about filing a claim"),
+    ).toBeInTheDocument();
     expect(screen.queryByText("No conversations yet")).not.toBeInTheDocument();
   });
 
@@ -181,7 +204,9 @@ describe("ChatPage conversation sidebar navigation", () => {
     expect(history.querySelectorAll("button")).toHaveLength(
       CONVERSATIONS.length,
     );
-    expect(screen.getByText("Old convo about filing a claim")).toBeInTheDocument();
+    expect(
+      screen.getByText("Old convo about filing a claim"),
+    ).toBeInTheDocument();
   });
 
   it("swaps the loaded history when a different conversation is clicked", async () => {
@@ -199,7 +224,9 @@ describe("ChatPage conversation sidebar navigation", () => {
     await waitFor(() => {
       expect(screen.getByText("How do I file a claim?")).toBeInTheDocument();
     });
-    expect(screen.queryByText("Is water damage covered?")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Is water damage covered?"),
+    ).not.toBeInTheDocument();
   });
 
   it("remounts the chat window when the route changes without a sidebar click", async () => {
@@ -220,7 +247,9 @@ describe("ChatPage conversation sidebar navigation", () => {
     await waitFor(() => {
       expect(screen.getByText("How do I file a claim?")).toBeInTheDocument();
     });
-    expect(screen.queryByText("Is water damage covered?")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Is water damage covered?"),
+    ).not.toBeInTheDocument();
   });
 
   it("does not leak the previous conversation's scroll state on a route-only change", async () => {
@@ -280,7 +309,9 @@ describe("ChatPage conversation sidebar navigation", () => {
     fireEvent.click(screen.getByTestId("new-chat-button"));
 
     await waitFor(() => expect(currentPath()).toBe("/chat"));
-    expect(screen.queryByText("Is water damage covered?")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Is water damage covered?"),
+    ).not.toBeInTheDocument();
     const history = await screen.findByTestId("chat-history");
     await waitFor(() => {
       expect(history.querySelectorAll("button")).toHaveLength(

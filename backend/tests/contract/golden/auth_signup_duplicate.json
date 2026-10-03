@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "An account with this username already exists",
+    "details": null
+  }
+}

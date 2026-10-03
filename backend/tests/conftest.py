@@ -2,9 +2,11 @@
 Pytest configuration and shared fixtures for the OmniCare Financial backend test suite.
 
 Provides fixtures for:
- - test_client: FastAPI TestClient instance configured for testing
- - sample_claims_path: Isolated temporary copy of mock_claims.json
- - mock_current_user: Overrides the get_current_user dependency with a fixed test user ID
+  - test_client: FastAPI TestClient instance configured for testing
+  - sample_claims_path: Isolated temporary copy of mock_claims.json
+  - mock_current_user: Overrides the get_current_user dependency with a fixed test user ID
+  - db_session: AsyncSession wrapped in an outer transaction that is rolled back
+  - _clean_database_state: autouse per-test deletion of every row in the schema
 """
 
 import asyncio
@@ -12,11 +14,15 @@ import json
 import os
 import shutil
 import sys
+import time
 import warnings
+from collections.abc import AsyncIterator
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import pytest_asyncio
+from sqlalchemy.exc import SQLAlchemyError
 
 
 def _in_docker() -> bool:
@@ -29,10 +35,118 @@ def _in_docker() -> bool:
         return False
 
 
-DB_HOST = "db" if _in_docker() else "localhost"
-os.environ["DATABASE_URL"] = (
-    f"postgresql+asyncpg://omnicare:omnicare_password@{DB_HOST}:5432/omnicare"
-)
+def _read_dotenv(key: str) -> str | None:
+    """Return a key's value from the project ``.env`` file, or None if absent."""
+    env_file = Path(__file__).resolve().parents[2] / ".env"
+    if not env_file.exists():
+        return None
+    for raw in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if line.startswith(f"{key}="):
+            return line.partition("=")[2].strip().replace("@localhost:", "@127.0.0.1:")
+    return None
+
+
+def _resolve_test_database_url() -> str:
+    """Pick one unambiguous PostgreSQL target for the test session.
+
+    Priority:
+
+    1. ``OMNICARE_TEST_DATABASE_URL`` from the process environment, then from ``.env``.
+    2. The project's ``.env`` ``DATABASE_URL``.
+    3. A local default.
+
+    Preference for a *test* database matters: the per-test fixture truncates every
+    application table, so pointing the suite at the database the running stack uses
+    would destroy live development data. ``_assert_database_is_dedicated`` enforces that
+    the target really is disposable.
+
+    The host is never ``localhost``: this machine commonly runs a Homebrew PostgreSQL on
+    127.0.0.1 and [::1] *and* a database container published on the wildcard address for
+    the same port. ``localhost`` lets the resolver pick either, so a signup and the reset
+    preceding it could land on different servers and one deletes the other's rows.
+    """
+    override = os.environ.get("OMNICARE_TEST_DATABASE_URL")
+    if override:
+        return override
+
+    from_file = _read_dotenv("OMNICARE_TEST_DATABASE_URL")
+    if from_file:
+        return from_file
+
+    app_url = _read_dotenv("DATABASE_URL")
+    if app_url:
+        return app_url
+
+    return f"postgresql+asyncpg://omnicare:omnicare_password@{DB_HOST}:5432/omnicare"
+
+
+# Each request runs on the ``TestClient`` portal loop while the database fixtures
+# reset the schema on their own ``asyncio.run`` loop. NullPool removes the pooled
+# connection hand-off between those loops; see app/database.py.
+os.environ["OMNICARE_TEST_NULLPOOL"] = "1"
+# The NullPool selection is gated on ENVIRONMENT=test so a stray value cannot turn it on
+# in a deployment, which means the suite must declare that tier for itself.
+os.environ["ENVIRONMENT"] = "test"
+
+DB_HOST = "db" if _in_docker() else "127.0.0.1"
+os.environ["DATABASE_URL"] = _resolve_test_database_url()
+
+# The host must be explicit rather than the ``localhost`` hostname. This machine
+# commonly runs two servers on port 5432 at once: a Homebrew Postgres bound to
+# 127.0.0.1 and [::1], and the omnicare-db container published on the wildcard
+# address. ``localhost`` lets the resolver pick either, so a signup and the reset
+# that precedes it can land on different servers and one deletes the other's rows.
+# Set OMNICARE_TEST_DATABASE_URL to point the suite at a specific server.
+
+DATABASE_URL = os.environ["DATABASE_URL"]
+
+_SERVER_IDENTITY: tuple[str, str] | None = None
+
+
+async def _read_server_identity() -> str:
+    """Return a string identifying the PostgreSQL server behind the engine."""
+    from sqlalchemy import text  # noqa: PLC0415
+
+    from app.database import async_session_factory  # noqa: PLC0415
+
+    async with async_session_factory() as session:
+        row = await session.execute(
+            text(
+                "SELECT current_database() || '@' || inet_server_addr()::text "
+                "|| '/' || pg_postmaster_start_time()::text"
+            )
+        )
+        return row.scalar_one()
+
+
+def _assert_stable_server(identity: str) -> None:
+    """Fail fast if the suite's connection is not landing on the same server twice.
+
+    Two servers listening on the same port is invisible until rows written by a test
+    vanish mid-test. Pinning the host handles the common case; this check catches a
+    server swapping underneath a long run and names the cause instead of letting the
+    suite fail with a confusing foreign-key error.
+
+    Args:
+        identity: The identity read on this pass, obtained from the caller's event loop.
+    """
+    global _SERVER_IDENTITY  # noqa: PLW0603
+
+    if _SERVER_IDENTITY is None:
+        _SERVER_IDENTITY = identity
+        return
+
+    if identity != _SERVER_IDENTITY:
+        raise AssertionError(
+            "The test suite changed PostgreSQL server mid-run.\n"
+            f"  first: {_SERVER_IDENTITY}\n"
+            f"  now:   {identity}\n"
+            "Two servers are listening on the same port, so connections are being "
+            "distributed between them. Set OMNICARE_TEST_DATABASE_URL to an explicit "
+            "host, or stop the competing server."
+        )
+
 
 # Ensure backend root is on sys.path
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -174,6 +288,187 @@ def _clear_idempotency_cache():
 
     yield
     clear_cache()
+
+
+_TABLES_IN_DELETE_ORDER = (
+    "conversation_messages",
+    "policy_chunks",
+    "embedding_jobs",
+    "claims",
+    "claim_submissions",
+    "conversations",
+    "policy_versions",
+    "policy_ingestion_meta",
+    "policies",
+    "users",
+)
+
+_RESTART_SEQUENCES_SQL = """
+DO $$
+DECLARE
+    seq record;
+BEGIN
+    FOR seq IN
+        SELECT sequencename
+        FROM pg_sequences
+        WHERE schemaname = current_schema()
+    LOOP
+        EXECUTE format('ALTER SEQUENCE %I RESTART', seq.sequencename);
+    END LOOP;
+END $$;
+"""
+
+
+async def _delete_all_rows() -> None:
+    """Delete every row from the application tables and restart sequences.
+
+    Rows are removed with ``DELETE FROM`` in foreign-key-safe reverse dependency
+    order rather than ``TRUNCATE ... CASCADE``. CASCADE would silently empty
+    tables that other suites seed, which hides ordering bugs instead of
+    surfacing them.
+
+    A bounded ``lock_timeout`` turns a blocked statement into a fast failure.
+    The reset runs in its own transaction, so a timeout rolls back cleanly and
+    leaves no partial state for the next attempt.
+    """
+    from sqlalchemy import text  # noqa: PLC0415
+
+    from app.database import async_session_factory  # noqa: PLC0415
+
+    async with async_session_factory() as session:
+        await session.execute(text("SET LOCAL lock_timeout = '5s'"))
+        for table in _TABLES_IN_DELETE_ORDER:
+            # Table names come from the fixed tuple above, never from test input.
+            await session.execute(text(f'DELETE FROM "{table}"'))  # noqa: S608
+        await session.execute(text(_RESTART_SEQUENCES_SQL))
+        await session.commit()
+
+
+_RESET_MARKER_TABLE = "users"
+
+
+def _assert_database_is_dedicated(resolved_url: str) -> None:
+    """Refuse to wipe a database that the developer's running stack is using.
+
+    ``_clean_database_state`` issues ``DELETE FROM`` on every application table before
+    each test. That is only safe against a database that exists purely for tests. Because
+    the URL may come from the project ``.env`` -- the same file the Docker stack reads --
+    an unguarded run would silently destroy live development data (users, conversations,
+    claims, and the policy index).
+
+    The guard is deliberately conservative: the database name must contain ``test``, or
+    the developer must opt in explicitly with ``OMNICARE_TEST_ALLOW_DESTRUCTIVE_RESET=1``.
+    """
+
+    override = os.environ.get("OMNICARE_TEST_ALLOW_DESTRUCTIVE_RESET") == "1"
+    database_name = resolved_url.rpartition("/")[2].split("?")[0]
+
+    if override or "test" in database_name.lower():
+        return
+
+    raise RuntimeError(
+        f"Refusing to run tests against '{database_name}': the per-test fixture deletes "
+        "every row in every application table before each test.\n"
+        "Point the suite at a dedicated database, for example:\n"
+        "  OMNICARE_TEST_DATABASE_URL=postgresql+asyncpg://user:pass@127.0.0.1:15432/omnicare_test\n"
+        "or opt in explicitly if this database really is disposable:\n"
+        "  OMNICARE_TEST_ALLOW_DESTRUCTIVE_RESET=1"
+    )
+
+
+def _reset_database(_attempts: int = 5) -> None:
+    """Dispose the engine and clear all rows in an isolated event loop.
+
+    The engine is a process-wide singleton whose pooled connections belong to
+    whichever event loop last used them. Disposing before opening a fresh loop
+    prevents ``Future attached to a different loop`` errors and additionally
+    rolls back any transaction a test left open, which would otherwise block
+    the ``DELETE`` statements.
+
+    The application under test and the ``alembic`` subprocesses that
+    ``test_client`` spawns share this database, so a reset can transiently lose
+    a deadlock or lock race against them. Retrying with a short backoff settles
+    that contention instead of failing a test that did nothing wrong.
+    """
+    from app.database import engine  # noqa: PLC0415
+
+    async def _run() -> None:
+        await engine.dispose()
+        try:
+            _assert_stable_server(await _read_server_identity())
+            await _delete_all_rows()
+        finally:
+            await engine.dispose()
+
+    # Pure string logic, so it runs before any loop is created.
+    _assert_database_is_dedicated(DATABASE_URL)
+
+    last_error: Exception | None = None
+    for attempt in range(_attempts):
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                asyncio.run(_run())
+        except SQLAlchemyError as exc:
+            last_error = exc
+            if attempt == _attempts - 1:
+                break
+            time.sleep(0.2 * (attempt + 1))
+        else:
+            return
+
+    raise AssertionError(
+        f"Database reset failed after {_attempts} attempts: {last_error!r}"
+    ) from last_error
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _clean_database_once():
+    """Clear the schema before the session starts.
+
+    A developer's local database may hold rows from an interrupted run. Without this
+    the very first test would start from that state.
+    """
+    _reset_database()
+
+
+@pytest.fixture(scope="function", autouse=True)
+def _clean_database_state():
+    """Run every test against an empty schema.
+
+    Autouse and function-scoped. The reset happens once, at setup, rather than on both
+    setup and teardown: ``chat`` persists the turn with ``asyncio.create_task``, so a
+    teardown delete can land while that detached task is still writing and make the
+    following test observe a half-written state. Truncating only at setup also halves
+    the delete traffic against the shared database.
+    """
+    _reset_database()
+    yield
+
+
+@pytest_asyncio.fixture
+async def db_session() -> AsyncIterator:
+    """Yield an AsyncSession whose changes are always rolled back.
+
+    The session is bound to a connection that holds an outer transaction, and that
+    transaction is rolled back on teardown. Binding matters: ``AsyncSession.begin()``
+    would create the session's *root* transaction, so a ``commit()`` inside a test would
+    commit for real and the rollback on teardown would run against a deactivated
+    transaction, breaking the guarantee.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession  # noqa: PLC0415
+
+    from app.database import engine  # noqa: PLC0415
+
+    async with engine.connect() as connection:
+        outer_transaction = await connection.begin()
+        session = AsyncSession(bind=connection, expire_on_commit=False)
+        try:
+            yield session
+        finally:
+            await session.close()
+            if outer_transaction.is_active:
+                await outer_transaction.rollback()
 
 
 _TEST_USER_ID = "00000000-0000-0000-0000-000000000001"

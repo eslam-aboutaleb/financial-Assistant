@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid category 'not-a-category'. Valid: ['coverage', 'limits', 'exclusions', 'deductibles', 'requirements', 'general']",
+    "details": null
+  }
+}

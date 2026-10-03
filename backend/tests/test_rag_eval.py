@@ -136,13 +136,15 @@ def test_evaluate_answer_heuristic_good_match():
 async def test_evaluate_answer_llm_success():
     mock_response = MagicMock()
     mock_choice = MagicMock()
-    mock_choice.message.content = json.dumps({
-        "faithfulness": 0.95,
-        "relevance": 0.90,
-        "completeness": 0.85,
-        "conciseness": 1.0,
-        "reasoning": "Accurate and grounded in context.",
-    })
+    mock_choice.message.content = json.dumps(
+        {
+            "faithfulness": 0.95,
+            "relevance": 0.90,
+            "completeness": 0.85,
+            "conciseness": 1.0,
+            "reasoning": "Accurate and grounded in context.",
+        }
+    )
     mock_response.choices = [mock_choice]
 
     with patch("litellm.acompletion", new_callable=AsyncMock) as mock_litellm:
@@ -343,4 +345,3 @@ def test_api_evaluate_rag_endpoint(test_client, mock_current_user):
         assert "answer_metrics" in data
         assert "summary" in data
         assert data["duration_seconds"] >= 0
-

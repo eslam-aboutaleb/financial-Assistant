@@ -136,11 +136,11 @@ async def test_ingest_policy_skip_if_exists():
             query_str = str(args[0]) if args else ""
             if "SELECT" in query_str and "policies" in query_str:
                 return mock_policy_result
-            elif "SELECT" in query_str and "policy_versions" in query_str:
+            if "SELECT" in query_str and "policy_versions" in query_str:
                 return mock_version_result
-            elif "SELECT" in query_str and "COUNT" in query_str:
+            if "SELECT" in query_str and "COUNT" in query_str:
                 return mock_count_result
-            elif "pg_advisory" in query_str:
+            if "pg_advisory" in query_str:
                 result = MagicMock()
                 result.scalar_one.return_value = 0
                 return result
@@ -181,9 +181,9 @@ async def test_ingest_policy_no_chunks():
                 result = MagicMock()
                 result.scalar_one_or_none.return_value = existing_policy
                 return result
-            elif "SELECT" in query_str and "policy_versions" in query_str:
+            if "SELECT" in query_str and "policy_versions" in query_str:
                 return mock_version_result
-            elif "pg_advisory" in query_str:
+            if "pg_advisory" in query_str:
                 result = MagicMock()
                 result.scalar_one.return_value = 0
                 return result
@@ -239,13 +239,13 @@ async def test_ingest_policy_success():
                 result = MagicMock()
                 result.scalar_one_or_none.return_value = existing_policy
                 return result
-            elif "SELECT" in query_str and "policy_versions" in query_str:
+            if "SELECT" in query_str and "policy_versions" in query_str:
                 return mock_version_result
-            elif "pg_advisory" in query_str:
+            if "pg_advisory" in query_str:
                 result = MagicMock()
                 result.scalar_one.return_value = 0
                 return result
-            elif "DELETE" in query_str:
+            if "DELETE" in query_str:
                 result = MagicMock()
                 result.rowcount = 0
                 return result
@@ -415,15 +415,15 @@ async def test_ingest_policy_reingests_when_hash_changes(tmp_path):
                 result = MagicMock()
                 result.scalar_one_or_none.return_value = existing_policy
                 return result
-            elif "SELECT" in query_str and "policy_versions" in query_str:
+            if "SELECT" in query_str and "policy_versions" in query_str:
                 result = MagicMock()
                 result.scalar_one_or_none.return_value = old_version
                 return result
-            elif "pg_advisory" in query_str:
+            if "pg_advisory" in query_str:
                 result = MagicMock()
                 result.scalar_one.return_value = 0
                 return result
-            elif "DELETE" in query_str:
+            if "DELETE" in query_str:
                 result = MagicMock()
                 result.rowcount = 0
                 return result
@@ -539,15 +539,15 @@ async def test_ingest_policy_skips_when_snapshot_stable(tmp_path):
                 result = MagicMock()
                 result.scalar_one_or_none.return_value = existing_policy
                 return result
-            elif "SELECT" in query_str and "policy_versions" in query_str:
+            if "SELECT" in query_str and "policy_versions" in query_str:
                 result = MagicMock()
                 result.scalar_one_or_none.return_value = old_version
                 return result
-            elif "SELECT" in query_str and "COUNT" in query_str:
+            if "SELECT" in query_str and "COUNT" in query_str:
                 result = MagicMock()
                 result.scalar_one.return_value = 5
                 return result
-            elif "pg_advisory" in query_str:
+            if "pg_advisory" in query_str:
                 result = MagicMock()
                 result.scalar_one.return_value = 0
                 return result

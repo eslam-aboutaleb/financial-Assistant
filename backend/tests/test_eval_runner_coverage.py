@@ -1,8 +1,7 @@
 """Coverage tests for app.rag.eval_runner uncovered paths."""
+
 from __future__ import annotations
 
-import asyncio
-import sys
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -133,6 +132,7 @@ class TestEvalRunner:
 
         with patch("sys.argv", ["eval_runner", "--mode", "retrieval-only"]):
             with patch("app.rag.eval_runner.run_evaluation", new_callable=AsyncMock) as mock_run:
+
                 @dataclass
                 class FakeResult:
                     summary: str = "done"
@@ -149,12 +149,18 @@ class TestEvalRunner:
         from app.rag.eval_runner import main
 
         output_file = tmp_path / "result.json"
-        with patch("sys.argv", [
-            "eval_runner",
-            "--mode", "retrieval-only",
-            "--output", str(output_file),
-        ]):
+        with patch(
+            "sys.argv",
+            [
+                "eval_runner",
+                "--mode",
+                "retrieval-only",
+                "--output",
+                str(output_file),
+            ],
+        ):
             with patch("app.rag.eval_runner.run_evaluation", new_callable=AsyncMock) as mock_run:
+
                 @dataclass
                 class FakeResult:
                     summary: str = "done"
@@ -172,12 +178,18 @@ class TestEvalRunner:
         from app.rag.eval_runner import main
 
         output_file = tmp_path / "eval_result.json"
-        with patch("sys.argv", [
-            "eval_runner",
-            "--mode", "retrieval-only",
-            "--output", str(output_file),
-        ]):
+        with patch(
+            "sys.argv",
+            [
+                "eval_runner",
+                "--mode",
+                "retrieval-only",
+                "--output",
+                str(output_file),
+            ],
+        ):
             with patch("app.rag.eval_runner.run_evaluation", new_callable=AsyncMock) as mock_run:
+
                 @dataclass
                 class FakeResult:
                     summary: str = "done"
@@ -191,6 +203,7 @@ class TestEvalRunner:
                 main()
         assert output_file.exists()
         import json
+
         data = json.loads(output_file.read_text())
         for sample in data.get("per_sample_results", []):
             assert "context" not in sample

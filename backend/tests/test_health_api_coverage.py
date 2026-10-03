@@ -1,9 +1,8 @@
 """Coverage tests for app.api.v1.health uncovered paths."""
+
 from __future__ import annotations
 
 from unittest.mock import patch
-
-import pytest
 
 
 class TestHealthAPI:

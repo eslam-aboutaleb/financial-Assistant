@@ -39,7 +39,6 @@ class Difficulty(StrEnum):
     HARD = "hard"
 
 
-
 @dataclass
 class EvalSample:
     """A single evaluation sample with query, expected retrieval, and gold answer."""
@@ -71,18 +70,14 @@ EVAL_DATASET: list[EvalSample] = [
     EvalSample(
         query="What is the maximum payout for water damage?",
         expected_sections=["Section 1: Home Water Damage Coverage"],
-        gold_answer=(
-            "Water damage caused by sudden pipe bursts is covered up to $25,000."
-        ),
+        gold_answer=("Water damage caused by sudden pipe bursts is covered up to $25,000."),
         category=QuestionCategory.LIMITS,
         difficulty=Difficulty.EASY,
     ),
     EvalSample(
         query="How much is the deductible for water damage claims?",
         expected_sections=["Section 1: Home Water Damage Coverage"],
-        gold_answer=(
-            "The deductible for water damage from sudden pipe bursts is $500."
-        ),
+        gold_answer=("The deductible for water damage from sudden pipe bursts is $500."),
         category=QuestionCategory.DEDUCTIBLES,
         difficulty=Difficulty.EASY,
     ),
@@ -121,9 +116,7 @@ EVAL_DATASET: list[EvalSample] = [
     EvalSample(
         query="What is covered under personal property protection?",
         expected_sections=["Section 2: Personal Property Protection"],
-        gold_answer=(
-            "Electronics, furniture, and jewelry are covered up to $10,000 total."
-        ),
+        gold_answer=("Electronics, furniture, and jewelry are covered up to $10,000 total."),
         category=QuestionCategory.COVERAGE,
         difficulty=Difficulty.EASY,
     ),
@@ -140,9 +133,7 @@ EVAL_DATASET: list[EvalSample] = [
     EvalSample(
         query="Do I need an appraisal for expensive items?",
         expected_sections=["Section 2: Personal Property Protection"],
-        gold_answer=(
-            "Yes, single items exceeding $2,500 require individual appraisal receipts."
-        ),
+        gold_answer=("Yes, single items exceeding $2,500 require individual appraisal receipts."),
         category=QuestionCategory.REQUIREMENTS,
         difficulty=Difficulty.MEDIUM,
     ),
@@ -192,8 +183,7 @@ EVAL_DATASET: list[EvalSample] = [
             "Section 1: Home Water Damage Coverage",
         ],
         gold_answer=(
-            "Gradual leaks and flood damage are explicitly excluded from the "
-            "water damage coverage."
+            "Gradual leaks and flood damage are explicitly excluded from the water damage coverage."
         ),
         category=QuestionCategory.EXCLUSIONS,
         difficulty=Difficulty.HARD,

@@ -443,4 +443,3 @@ class RagEvalResponse(BaseModel):
     )
     summary: str = Field(..., description="Formatted summary report")
     duration_seconds: float = Field(..., description="Total execution duration in seconds")
-

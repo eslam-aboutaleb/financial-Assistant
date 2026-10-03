@@ -252,7 +252,16 @@ Configuration is strictly centralized in [`app/config.py`](file:///Users/eslamab
 | `OPENAI_API_BASE`        | `str`       | `""`                             | Valid URL or empty string                              | Optional OpenAI API base URL override for LiteLLM.            |
 | `LLM_MODEL`              | `str`       | `openai/gpt-4o-mini`             | `provider/model_name` string                           | Model routed via LiteLLM.                                     |
 | `EMBEDDING_MODEL`        | `str`       | `text-embedding-3-small`          | Pretrained model identifier                            | Embedding model name used by LiteLLM for pgvector.            |
+| `INGEST_ON_STARTUP`      | `bool`      | `true`                            | `true` / `false`                                       | Index policy documents during API startup.                    |
+| `EMBEDDING_DRAIN_INTERVAL_SECONDS` | `float` | `5.0`                     | Greater than `0.1`                                     | Idle sleep of the embedding drainer.                          |
+| `EMBEDDING_DRAIN_BATCH_SIZE` | `int`   | `10`                              | Greater than `0`                                       | Jobs claimed per embedding drainer pass.                      |
 | `POLICY_FILE_PATH`       | `str`       | `./app/data/sample_policy.md`    | Valid file path                                        | Source policy document for RAG ingestion.                     |
+
+### Embedding dimension
+
+The vector dimension is owned by [`app/rag/embedding_dimensions.py`](app/rag/embedding_dimensions.py). Call `get_embedding_dimension()` rather than hardcoding `1536`; it resolves the dimension for the configured `EMBEDDING_MODEL` and is the single source of truth used by ingestion, retrieval, and the vector stores. Vectors are checked by `pgvector_store._validate_embedding`, which every write and query path must call.
+
+The two pgvector columns are still declared with a literal `Vector(1536)` in `app/models/claim.py` and `app/models/policy_chunk.py`. Widening or narrowing the stored column requires an `ALTER TABLE` migration and is not covered by the runtime check, so treat a change of `EMBEDDING_MODEL` as a schema migration, not a configuration change.
 
 FastAPI endpoints consume settings through `Depends(get_settings)`:
 
@@ -364,4 +373,48 @@ pytest tests/test_claim_status.py -v
    - Grounding rules require that all policy coverage answers cite retrieved sections directly from `query_policy`.
 
 4. **Container Security**:
-   - The [`Dockerfile`](file:///Users/eslamaboutaleb/Documents/omnicare-financial/backend/Dockerfile) builds upon `python:3.11-slim`, executes build-time RAG indexing, and exposes only the required port 8000.
+   - The [`Dockerfile`](Dockerfile) builds upon `python:3.11-slim`, executes build-time RAG indexing, and exposes only the required port 8000.
+
+---
+
+## 7. Known Gaps
+
+Deliberately recorded so the next reader does not rediscover them. None of these are
+fixed by the current work; each names what closing it would involve.
+
+### A. pgvector column dimensions are still literals
+
+`app/models/claim.py` and `app/models/policy_chunk.py` declare `Vector(1536)` directly
+instead of deriving it from `app/rag/embedding_dimensions.py`. The runtime dimension is
+now checked centrally, but changing `EMBEDDING_MODEL` to a model of a different width
+still requires an `ALTER TABLE` migration for both tables. Until that migration exists,
+the two values must be changed together by hand.
+
+### B. `/api/v1/chat` accepts an empty message
+
+`ChatRequest.message` has no minimum length, so `POST /api/v1/chat` with `{"message": ""}`
+returns 200 and runs the agent. `POST /api/v1/chat/stream` rejects the same payload
+with 422 through an explicit guard. The asymmetry is frozen by the contract suite
+(`test_contract_chat.py::test_chat_accepts_empty_message`). Closing it means adding
+`min_length` to `ChatRequest` and re-recording `chat_response_empty_message.json`.
+
+### C. Sign-out does not revoke an access token
+
+`POST /api/v1/auth/logout` clears the session cookie only. The JWT is stateless and
+remains valid for its full one-week lifetime if captured. Revocation needs either a
+server-side deny list keyed on `jti` or short-lived tokens with refresh; the current
+token has no `jti` claim to key on. Frozen by
+`test_contract_auth_modes.py::test_signout_only_clears_the_cookie`.
+
+### D. `tests/llm_e2e` depends on the live OpenAI API
+
+`tests/test_llm_e2e.py` is gated on `OPENAI_API_KEY` and asserts on free-form model
+output, so it fails intermittently and is slow. It is excluded from the frozen contract,
+which uses `tests/contract/llm_double.py` instead. Treat it as a manual smoke suite, not
+as a CI gate.
+
+### E. The embedding outbox has no dead-letter alerting
+
+Jobs exhausted after `MAX_ATTEMPTS` land in `dead_letter` with the error recorded in
+`status_detail`. Nothing surfaces that state: there is no metric, no log alert, and no
+endpoint. An operator finds out by querying the table.

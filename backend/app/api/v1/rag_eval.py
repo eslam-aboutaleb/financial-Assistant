@@ -107,8 +107,7 @@ async def evaluate_rag(
     status_code=status.HTTP_200_OK,
     summary="List RAG Evaluation Dataset",
     description=(
-        "Returns the curated evaluation dataset with queries, "
-        "expected sections, and gold answers."
+        "Returns the curated evaluation dataset with queries, expected sections, and gold answers."
     ),
 )
 async def list_eval_dataset(

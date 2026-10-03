@@ -1,9 +1,8 @@
 """Coverage tests for app.api.v1.rag_eval uncovered paths."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
-
-import pytest
 
 
 class TestRagEvalAPI:

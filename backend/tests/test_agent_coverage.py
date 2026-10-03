@@ -1,6 +1,8 @@
 """Coverage tests for app.agent.agent uncovered paths."""
+
 from __future__ import annotations
 
+import logging
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -36,9 +38,7 @@ class TestAgentSessionEviction:
         _user_sessions["evict-user"] = "session-evict"
         with patch("app.agent.agent.session_service") as mock_session_service:
             mock_session_service.create_session = AsyncMock()
-            mock_session_service.delete_session = AsyncMock(
-                side_effect=Exception("delete failed")
-            )
+            mock_session_service.delete_session = AsyncMock(side_effect=Exception("delete failed"))
             with patch("app.agent.agent.logger") as mock_logger:
                 await _ensure_session("new-user-after-capacity")
                 mock_logger.warning.assert_called()
@@ -49,9 +49,7 @@ class TestAgentSessionEviction:
 
         _user_sessions["reset-user"] = "session-reset"
         with patch("app.agent.agent.session_service") as mock_session_service:
-            mock_session_service.delete_session = AsyncMock(
-                side_effect=Exception("delete failed")
-            )
+            mock_session_service.delete_session = AsyncMock(side_effect=Exception("delete failed"))
             with patch("app.agent.agent.logger") as mock_logger:
                 await reset_user_session("reset-user")
                 mock_logger.warning.assert_called()
@@ -81,9 +79,7 @@ class TestAgentStreamCoverage:
                 mock_session_service.delete_session = AsyncMock()
                 result = MagicMock()
                 chunks = []
-                async for chunk in run_agent_stream(
-                    user_id=user_id, message="test", result=result
-                ):
+                async for chunk in run_agent_stream(user_id=user_id, message="test", result=result):
                     chunks.append(chunk)
 
         assert result.session_id is not None
@@ -133,9 +129,7 @@ class TestAgentStreamCoverage:
                 mock_session_service.create_session = AsyncMock()
                 mock_session_service.delete_session = AsyncMock()
                 result = MagicMock()
-                async for _ in run_agent_stream(
-                    user_id=user_id, message="test", result=result
-                ):
+                async for _ in run_agent_stream(user_id=user_id, message="test", result=result):
                     pass
 
         assert len(result.tool_calls) == 1
@@ -172,9 +166,26 @@ class TestAgentStreamCoverage:
                 mock_session_service.create_session = AsyncMock()
                 mock_session_service.delete_session = AsyncMock()
                 result = MagicMock()
-                async for _ in run_agent_stream(
-                    user_id=user_id, message="test", result=result
-                ):
+                async for _ in run_agent_stream(user_id=user_id, message="test", result=result):
                     pass
 
         assert result.sources == ["plain-string-source"]
+
+
+class TestAgentResetSession:
+    @pytest.mark.asyncio
+    async def test_reset_user_session_delete_success_logs_debug(self):
+        from app.agent.agent import reset_user_session
+
+        mock_session_service = MagicMock()
+        mock_session_service.delete_session = AsyncMock(return_value=None)
+
+        with (
+            patch("app.agent.agent.session_service", mock_session_service),
+            patch("app.agent.agent._user_sessions", {"user-1": "session-1"}),
+        ):
+            with patch.object(logging.getLogger("app.agent.agent"), "debug") as mock_debug:
+                await reset_user_session("user-1")
+                mock_session_service.delete_session.assert_awaited_once()
+                mock_debug.assert_called_once()
+                assert "user-1" in str(mock_debug.call_args)
